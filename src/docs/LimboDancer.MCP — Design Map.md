@@ -1,7 +1,3 @@
-Alright — here’s a **revised PR-ready `LimboDancer.MCP.md`** that is consistent with the updated Roadmap and your new requirements:
-
----
-
 # LimboDancer.MCP — Design Map
 
 ## Purpose

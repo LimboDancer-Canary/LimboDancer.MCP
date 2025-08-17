@@ -1,6 +1,10 @@
 
 # Ontology and Agentic AI in LimboDancer.MCP
 
+## What is Ontology
+
+Ontology, in the context of AI and systems like LimboDancer.MCP, is a structured way of defining and organizing knowledge. It provides a formal vocabulary of concepts (such as entities, relationships, and properties) and rules for how these concepts interconnect. By establishing a shared semantic framework, ontology ensures that different components—humans, AI agents, and services—interpret and reason about information consistently. This enables more effective search, reasoning, and coordination across distributed systems, forming the backbone for truly agentic AI.
+
 ## Why Ontology Matters
 
 Agentic AI systems need more than raw embeddings or search indices — they require **shared semantics** that bind:

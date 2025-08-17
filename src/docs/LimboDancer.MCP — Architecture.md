@@ -1,14 +1,3 @@
-Great catch—and thanks for sharing the working ER syntax. Your fixes (UPPERCASE types, no comments) are the right way to make Mermaid 11.9.0 happy.
-
-Below is a **drop-in replacement** for your entire `Architecture.md`, with **all diagrams** rewritten to follow the same strict rules:
-
-* ASCII-only labels (no smart arrows or unicode).
-* No inline comments inside Mermaid.
-* ER types in UPPERCASE: `UUID`, `STRING`, `DATETIME`, `TEXT`.
-* No line breaks or special formatting inside node labels.
-
----
-
 # LimboDancer.MCP — Architecture
 
 > Target stack: .NET 9, Azure Container Apps, Azure OpenAI, Azure AI Search (vector/hybrid), Azure Cosmos DB (Gremlin API), Azure Database for PostgreSQL – Flexible Server, Azure Service Bus, Azure Blob Storage, Application Insights (OTEL).
