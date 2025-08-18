@@ -2,6 +2,23 @@
 
 > Target stack: .NET 9, Azure Container Apps, Azure OpenAI, Azure AI Search (vector/hybrid), Azure Cosmos DB (Gremlin API), Azure Database for PostgreSQL – Flexible Server, Azure Service Bus, Azure Blob Storage, Application Insights (OTEL).
 
+## Architecture Diagram
+
+```mermaid
+flowchart TD
+  A[Ontology ldm:* + JSONLD context] -->|binds schemas| B[MCP Tools history memory graph]
+  B -->|append read| C[Postgres EFCore]
+  B -->|hybrid search| D[Azure AI Search Vector]
+  B -->|gremlin read| E[Cosmos Gremlin Graph]
+  F[CLI Dev Bootstrap] -->|db migrate mem add mem search kg ping| B
+  G[Operator Console Blazor] -->|read sessions messages| C
+  G -->|search memory| D
+  G -->|browse vertices edges| E
+  A -->|labels ids| D
+  A -->|labels ids| E
+  A -->|curies context| C
+```
+
 ---
 
 ## 1) Objectives
