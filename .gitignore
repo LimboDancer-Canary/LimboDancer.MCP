@@ -55,3 +55,8 @@ nunit-*.xml
 *.vsidx
 *.db
 *.db-wal
+/src/.vs/slnx.sqlite
+/src/.vs/src/CopilotIndices/17.14.995.13737/CodeChunks.db
+/src/.vs/src/CopilotIndices/17.14.995.13737/CodeChunks.db-wal
+/src/.vs/src/CopilotIndices/17.14.995.13737/SemanticSymbols.db
+/src/.vs/src/CopilotIndices/17.14.995.13737/SemanticSymbols.db-wal
