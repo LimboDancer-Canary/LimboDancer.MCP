@@ -1,5 +1,13 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
 
+  <ItemGroup>
+    <ProjectReference Include="..\LimboDancer.MCP.Core\LimboDancer.MCP.Core.csproj" />
+    <ProjectReference Include="..\LimboDancer.MCP.Storage\LimboDancer.MCP.Storage.csproj" />
+    <ProjectReference Include="..\LimboDancer.MCP.Ontology\LimboDancer.MCP.Ontology.csproj" />
+    <ProjectReference Include="..\LimboDancer.MCP.Vector.AzureSearch\LimboDancer.MCP.Vector.AzureSearch.csproj" />
+    <ProjectReference Include="..\LimboDancer.MCP.Graph.CosmosGremlin\LimboDancer.MCP.Graph.CosmosGremlin.csproj" />
+  </ItemGroup>
+
   <PropertyGroup>
     <TargetFramework>net9.0</TargetFramework>
     <ImplicitUsings>enable</ImplicitUsings>
