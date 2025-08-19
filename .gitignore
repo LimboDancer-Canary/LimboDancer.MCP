@@ -64,3 +64,10 @@ nunit-*.xml
 *.bak
 /src/.vs/src/v17/DocumentLayout.json
 /src/.vs/src/v17/DocumentLayout.backup.json
+*.db-shm
+/.vs/LimboDancer.MCP/v17/DocumentLayout.backup.json
+/.vs/LimboDancer.MCP/v17/DocumentLayout.json
+/.vs/slnx.sqlite
+/src/.vs/VSWorkspaceState.json
+*.suo
+*.user
