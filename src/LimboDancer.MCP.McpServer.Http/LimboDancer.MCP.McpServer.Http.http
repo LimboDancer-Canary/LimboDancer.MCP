@@ -1,0 +1,6 @@
+@LimboDancer.MCP.McpServer.Http_HostAddress = http://localhost:5238
+
+GET {{LimboDancer.MCP.McpServer.Http_HostAddress}}/weatherforecast/
+Accept: application/json
+
+###
