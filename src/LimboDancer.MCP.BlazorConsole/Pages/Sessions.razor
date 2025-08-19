@@ -1,0 +1,124 @@
+@page "/sessions"
+@inject IDbContextFactory<ChatDbContext> DbFactory
+
+<h3>Sessions</h3>
+
+<div class="grid">
+    <div class="col">
+        <h4>Recent Sessions</h4>
+        <button class="btn" @onclick="LoadSessionsAsync">Reload</button>
+        <table class="grid-table">
+            <thead>
+                <tr>
+                    <th>Id</th>
+                    <th>User</th>
+                    <th>Created</th>
+                    <th>Messages</th>
+                </tr>
+            </thead>
+            <tbody>
+                @if (sessions is null)
+                {
+                    <tr><td colspan="4">Loading…</td></tr>
+                }
+                else if (sessions.Count == 0)
+                {
+                    <tr><td colspan="4">No sessions.</td></tr>
+                }
+                else
+                {
+                    @foreach (var s in sessions)
+                    {
+                        <tr class="rowlink @(s.Id == selectedSessionId ? "active" : "")"
+                            @onclick="() => SelectSessionAsync(s.Id)">
+                            <td>@s.Id</td>
+                            <td>@s.UserId</td>
+                            <td>@s.CreatedAt.ToString("u")</td>
+                            <td>@(s.Messages?.Count ?? 0)</td>
+                        </tr>
+                    }
+                }
+            </tbody>
+        </table>
+    </div>
+
+    <div class="col">
+        <h4>Messages (@selectedSessionId)</h4>
+        <table class="grid-table">
+            <thead>
+                <tr>
+                    <th>When (UTC)</th>
+                    <th>Role</th>
+                    <th>Content</th>
+                </tr>
+            </thead>
+            <tbody>
+                @if (messages is null)
+                {
+                    <tr><td colspan="3">Select a session.</td></tr>
+                }
+                else if (messages.Count == 0)
+                {
+                    <tr><td colspan="3">No messages.</td></tr>
+                }
+                else
+                {
+                    @foreach (var m in messages)
+                    {
+                        <tr>
+                            <td>@m.CreatedAt.ToString("u")</td>
+                            <td>@m.Role</td>
+                            <td>@(m.Content?.Length > 200 ? m.Content[..200] + "…" : m.Content)</td>
+                        </tr>
+                    }
+                }
+            </tbody>
+        </table>
+    </div>
+</div>
+
+@code {
+    private List<Session>? sessions;
+    private Guid? selectedSessionId;
+    private List<Message>? messages;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadSessionsAsync();
+    }
+
+    private async Task LoadSessionsAsync()
+    {
+        using var db = await DbFactory.CreateDbContextAsync();
+        sessions = await db.Sessions
+            .AsNoTracking()
+            .OrderByDescending(s => s.CreatedAt)
+            .Take(100)
+            .Select(s => new Session
+            {
+                Id = s.Id,
+                UserId = s.UserId,
+                CreatedAt = s.CreatedAt,
+                Messages = s.Messages
+            })
+            .ToListAsync();
+
+        // messages count eager-load (lightweight)
+        foreach (var s in sessions)
+        {
+            s.Messages = await db.Messages.AsNoTracking().Where(m => m.SessionId == s.Id).ToListAsync();
+        }
+    }
+
+    private async Task SelectSessionAsync(Guid id)
+    {
+        selectedSessionId = id;
+        using var db = await DbFactory.CreateDbContextAsync();
+        messages = await db.Messages
+            .AsNoTracking()
+            .Where(m => m.SessionId == id)
+            .OrderBy(m => m.CreatedAt)
+            .Take(1000)
+            .ToListAsync();
+    }
+}
