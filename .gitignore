@@ -439,3 +439,4 @@ BenchmarkDotNet.Artifacts/
 .Trashes
 ehthumbs.db
 Thumbs.db
+/src/.vs/src/CopilotIndices/17.14.995.13737/CodeChunks.db-shm
