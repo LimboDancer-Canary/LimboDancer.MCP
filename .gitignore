@@ -63,3 +63,4 @@ nunit-*.xml
 *.wsuo
 *.bak
 /src/.vs/src/v17/DocumentLayout.json
+/src/.vs/src/v17/DocumentLayout.backup.json
