@@ -1,8 +1,9 @@
 using LimboDancer.MCP.Core.Tenancy;
 using LimboDancer.MCP.Graph.CosmosGremlin;
+using ModelContextProtocol;
 using ModelContextProtocol.Protocol;
-using System.Net.Mail;
 using System.Text.Json;
+using System.Text.Json.Nodes;
 
 namespace LimboDancer.MCP.McpServer.Tools;
 
@@ -28,13 +29,13 @@ public sealed class GraphQueryTool : IMcpTool
                 ToolSchema.Prop(props, "mode", "string", "getProperty | edgeExists");
 
                 // getProperty
-                ToolSchema.Prop(props, "subjectId", "string", "Vertex local id (without tenant prefix)");
-                ToolSchema.Prop(props, "property", "string", "Property key to read");
+                ToolSchema.Prop(props, "subjectId", "string", "Vertex local id (without tenant prefix)", ontologyId: "ldm:id");
+                ToolSchema.Prop(props, "property", "string", "Property key to read", ontologyId: "ldm:property");
 
                 // edgeExists
-                ToolSchema.Prop(props, "outId", "string", "Out-vertex local id");
-                ToolSchema.Prop(props, "edgeLabel", "string", "Edge label");
-                ToolSchema.Prop(props, "inId", "string", "In-vertex local id");
+                ToolSchema.Prop(props, "outId", "string", "Out-vertex local id", ontologyId: "ldm:id");
+                ToolSchema.Prop(props, "edgeLabel", "string", "Edge label", ontologyId: "ldm:relation");
+                ToolSchema.Prop(props, "inId", "string", "In-vertex local id", ontologyId: "ldm:id");
 
                 req.Add("mode");
             })
@@ -82,7 +83,7 @@ public sealed class GraphQueryTool : IMcpTool
                 }
 
             default:
-                throw new McpException("Unsupported mode. Use: getProperty | edgeExists.");
+                throw new McpException("Unsupported 'mode'.");
         }
     }
 }

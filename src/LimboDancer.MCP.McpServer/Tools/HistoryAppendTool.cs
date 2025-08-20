@@ -1,9 +1,11 @@
 using LimboDancer.MCP.Core;
 using LimboDancer.MCP.Core.Tenancy;
+using LimboDancer.MCP.McpServer.Storage;
 using LimboDancer.MCP.Storage;
+using ModelContextProtocol;
 using ModelContextProtocol.Protocol;
-using System.Net.Mail;
 using System.Text.Json;
+using System.Text.Json.Nodes;
 
 namespace LimboDancer.MCP.McpServer.Tools;
 
@@ -12,10 +14,10 @@ public sealed class HistoryAppendTool : IMcpTool
     public string Name => "history.append";
     public Tool ToolDescriptor { get; }
 
-    private readonly IChatHistoryStore _history;
+    private readonly IHistoryService _history;
     private readonly ITenantAccessor _tenant;
 
-    public HistoryAppendTool(IChatHistoryStore history, ITenantAccessor tenant)
+    public HistoryAppendTool(IHistoryService history, ITenantAccessor tenant)
     {
         _history = history;
         _tenant = tenant;
@@ -24,14 +26,42 @@ public sealed class HistoryAppendTool : IMcpTool
         {
             Name = Name,
             Description = "Append a message (user/assistant/tool) to a session. Tenancy is enforced by server context.",
-            InputSchema = ToolSchema.Build((schema, props, req) =>
-            {
-                ToolSchema.Prop(props, "sessionId", "string", "Session id (GUID)", "uuid");
-                ToolSchema.Prop(props, "role", "string", "user | assistant | tool");
-                ToolSchema.Prop(props, "content", "string", "Message text");
-                ToolSchema.Prop(props, "toolCallsJson", "string", "JSON (optional)");
-                req.Add("sessionId"); req.Add("role"); req.Add("content");
-            })
+            InputSchema = ToolSchema.Build(
+                (schema, props, req) =>
+                {
+                    // Bind to ontology URIs via @id
+                    ToolSchema.Prop(props, "sessionId", "string", "Session id (GUID)", "uuid", ontologyId: "ldm:Session");
+                    ToolSchema.Prop(props, "role", "string", "user | assistant | tool", ontologyId: "ldm:Message.role");
+                    ToolSchema.Prop(props, "content", "string", "Message text", ontologyId: "ldm:Message.content");
+                    ToolSchema.Prop(props, "toolCallsJson", "string", "JSON (optional)", ontologyId: "ldm:ToolCall");
+                    req.Add("sessionId"); req.Add("role"); req.Add("content");
+                },
+                customize: schema =>
+                {
+                    // Attach ontology preconditions/effects (using ontology predicates) as vendor extension
+                    var pre = new JsonArray
+                    {
+                        new JsonObject
+                        {
+                            // A simple existence check for the session (predicate omitted => existence)
+                            ["subject"] = "ldm:Session",
+                            ["predicate"] = "",
+                            ["equals"] = ""
+                        }
+                    };
+
+                    var eff = new JsonArray
+                    {
+                        new JsonObject
+                        {
+                            // Effect: session hasMessage -> message (predicate uses ontology relation)
+                            ["predicate"] = "ldm:hasMessage",
+                            ["value"] = "created" // hint; servers may ignore
+                        }
+                    };
+
+                    ToolSchema.AddOntologyExtensions(schema, preconditions: pre, effects: eff);
+                })
         };
     }
 
@@ -78,7 +108,7 @@ public sealed class HistoryAppendTool : IMcpTool
 
         return new CallToolResult
         {
-            Content = [new TextContentBlock { Type = "text", Text = JsonSerializer.Serialize(payload) }]
+            Content = [new TextContentBlock { Type = "text", Text = System.Text.Json.JsonSerializer.Serialize(payload) }]
         };
     }
 }

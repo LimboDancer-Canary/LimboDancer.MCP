@@ -1,8 +1,8 @@
 using LimboDancer.MCP.Core;
 using LimboDancer.MCP.Core.Tenancy;
 using LimboDancer.MCP.Storage;
+using ModelContextProtocol;
 using ModelContextProtocol.Protocol;
-using System.Net.Mail;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 
@@ -19,7 +19,7 @@ internal interface IMcpTool
 /// <summary>Small helper to build a JSON Schema object for MCP Tool.InputSchema.</summary>
 internal static class ToolSchema
 {
-    public static JsonElement Build(Action<JsonObject, JsonObject, JsonArray> build)
+    public static JsonElement Build(Action<JsonObject, JsonObject, JsonArray> build, Action<JsonObject>? customize = null)
     {
         var schema = new JsonObject
         {
@@ -33,15 +33,35 @@ internal static class ToolSchema
         var req = (JsonArray)schema["required"]!;
         build(schema, props, req);
 
+        customize?.Invoke(schema);
+
         return JsonSerializer.Deserialize<JsonElement>(schema.ToJsonString())!;
     }
 
-    public static void Prop(JsonObject props, string name, string type, string? title = null, string? format = null)
+    public static void Prop(
+        JsonObject props,
+        string name,
+        string type,
+        string? title = null,
+        string? format = null,
+        string? ontologyId = null)
     {
         var o = new JsonObject { ["type"] = type };
         if (!string.IsNullOrWhiteSpace(title)) o["title"] = title;
         if (!string.IsNullOrWhiteSpace(format)) o["format"] = format;
+        if (!string.IsNullOrWhiteSpace(ontologyId)) o["@id"] = ontologyId; // JSON-LD binding
         props[name] = o;
+    }
+
+    public static void AddOntologyExtensions(JsonObject schema, JsonArray? preconditions = null, JsonArray? effects = null)
+    {
+        var ext = new JsonObject();
+        if (preconditions is not null) ext["preconditions"] = preconditions;
+        if (effects is not null) ext["effects"] = effects;
+        if (ext.Count > 0)
+        {
+            schema["x-ontology"] = ext; // vendor extension to carry ontology preconditions/effects (using ontology predicates)
+        }
     }
 }
 
@@ -64,7 +84,8 @@ public sealed class HistoryGetTool : IMcpTool
             Description = "Get chat history messages for a session (paged). Tenancy is enforced by server context.",
             InputSchema = ToolSchema.Build((schema, props, req) =>
             {
-                ToolSchema.Prop(props, "sessionId", "string", "Session id (GUID)", "uuid");
+                // Bind to ontology URIs via @id
+                ToolSchema.Prop(props, "sessionId", "string", "Session id (GUID)", "uuid", ontologyId: "ldm:Session");
                 ToolSchema.Prop(props, "take", "integer", "Page size (default 100)");
                 ToolSchema.Prop(props, "skip", "integer", "Offset (default 0)");
                 req.Add("sessionId");
@@ -89,7 +110,7 @@ public sealed class HistoryGetTool : IMcpTool
             tenantId = _tenant.TenantId,
             sessionId,
             count = msgs.Count,
-            messages = msgs.Select(m => new
+            items = msgs.Select(m => new
             {
                 id = m.Id,
                 role = m.Role.ToString().ToLowerInvariant(),

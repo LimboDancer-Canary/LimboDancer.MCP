@@ -1,0 +1,94 @@
+﻿@page "/ontology/validators"
+@using LimboDancer.MCP.BlazorConsole.Services
+@inject OntologyValidationService Validation
+@inject IConfiguration Config
+
+<CascadingParameter] TenantUiState TenantState { get; set; }=default!;
+
+<div class="content-inner">
+    <h2>Ontology Validators</h2>
+
+    <div class="searchpanel">
+        <span>Tenant:</span>
+        <input class="text" value="@TenantState.TenantLabel" disabled />
+        <button class="btn small" @onclick="Run">Run validators</button>
+    </div>
+
+@if (_error is not null)
+{
+            <div style="color:#ff8a80">@_error</div>
+}
+
+@if (_loading)
+{
+            <div>Running validators...</div>
+}
+else if (_results.Count == 0)
+{
+            <div>No validator outcomes.</div>
+}
+else
+{
+            <table class="grid-table">
+                <thead>
+                <tr>
+                    <th>When</th>
+                    <th>Severity</th>
+                    <th>Kind</th>
+                    <th>Id</th>
+                    <th>Message</th>
+                </tr>
+                </thead>
+                <tbody>
+                @foreach (var r in _results)
+                {
+                        <tr>
+                            <td>@r.At.ToString("u")</td>
+                            <td>@r.Severity</td>
+                            <td>@r.Kind</td>
+                            <td>@r.Id</td>
+                            <td>@r.Message</td>
+                        </tr>
+                }
+                </tbody>
+            </table>
+}
+</div>
+
+@code
+{
+    private bool _loading;
+    private string? _error;
+    private List<ValidatorOutcome> _results = new();
+
+    protected override async Task OnInitializedAsync()
+    {
+        // Optionally auto-run in development if Tenant exists
+        if (TenantState.HasTenant && (Config["AutoRunValidatorsOnLoad"] ?? "false").Equals("true", StringComparison.OrdinalIgnoreCase))
+        {
+            await Run();
+        }
+    }
+
+    private async Task Run()
+    {
+        _error = null;
+        _results.Clear();
+        if (!TenantState.HasTenant) { _error = "No tenant selected."; return; }
+
+        _loading = true;
+        try
+        {
+            _results = (await Validation.RunAsync(TenantState.TenantId!.Value, package: "default", channel: "dev")).ToList();
+        }
+        catch (Exception ex)
+        {
+            _error = ex.Message;
+        }
+        finally
+        {
+            _loading = false;
+            StateHasChanged();
+        }
+    }
+}

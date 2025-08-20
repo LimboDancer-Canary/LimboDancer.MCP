@@ -12,6 +12,9 @@ root.AddCommand(VectorInitCommand.Build());
 root.AddCommand(KgPingCommand.Build());
 root.AddCommand(MemAddCommand.Build());
 root.AddCommand(MemSearchCommand.Build());
+// New ontology commands
+root.AddCommand(OntologyExportCommand.Build());
+root.AddCommand(OntologyValidateCommand.Build());
 
 return await root.InvokeAsync(args);
 
