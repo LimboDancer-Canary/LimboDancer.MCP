@@ -1,102 +1,240 @@
+using System;
+using System.Collections.Generic;
+using System.Threading;
+using System.Threading.Tasks;
 using Gremlin.Net.Driver;
-using LimboDancer.MCP.Core.Tenancy;
+using Microsoft.Extensions.Logging;
 
-namespace LimboDancer.MCP.Graph.CosmosGremlin;
-
-/// <summary>
-/// Minimal, tenant-safe graph store for Cosmos Gremlin.
-/// Strategy:
-///  - Vertex IDs are prefixed with tenant (N-format Guid): "{tenantN}:{localId}"
-///  - Every vertex/edge also carries a 'tenantId' string property (tenant Guid N-format)
-///  - Every traversal guards with has('tenantId', t)
-/// </summary>
-public sealed class GraphStore
+namespace LimboDancer.MCP.Graph.CosmosGremlin
 {
-    private readonly GremlinClient _g;
-    private readonly ITenantAccessor _tenant;
-
-    public GraphStore(GremlinClient client, ITenantAccessor tenant)
+    public sealed class GraphStore
     {
-        _g = client ?? throw new ArgumentNullException(nameof(client));
-        _tenant = tenant ?? throw new ArgumentNullException(nameof(tenant));
-    }
+        private readonly IGremlinClient _client;
+        private readonly Preconditions _preconditions;
+        private readonly Func<string> _getTenantId;
+        private readonly ILogger<GraphStore> _logger;
 
-    private string T() => _tenant.TenantId.ToString("N");
-    private string VId(string localId) => $"{T()}:{localId}";
+        public GraphStore(
+            IGremlinClient client,
+            Func<string> getTenantId,
+            ILogger<GraphStore> logger,
+            Preconditions? preconditions = null,
+            ILogger<Preconditions>? preconditionsLogger = null)
+        {
+            _client = client ?? throw new ArgumentNullException(nameof(client));
+            _getTenantId = getTenantId ?? throw new ArgumentNullException(nameof(getTenantId));
+            _logger = logger ?? throw new ArgumentNullException(nameof(logger));
+            _preconditions = preconditions ?? new Preconditions(client, getTenantId, preconditionsLogger ?? logger as ILogger<Preconditions> ?? throw new ArgumentNullException(nameof(preconditionsLogger)));
+        }
 
-    /// <summary>Upsert a vertex with a label and properties. 'localId' is tenant-local; the method prefixes it.</summary>
-    public async Task UpsertVertexAsync(string localId, string label, IDictionary<string, object?>? props = null, CancellationToken ct = default)
-    {
-        props ??= new Dictionary<string, object?>();
-        props["tenantId"] = T();
+        // Upsert a vertex with tenant-scoped id and properties
+        public async Task UpsertVertexAsync(string label, string localId, IDictionary<string, object>? properties = null, CancellationToken ct = default)
+        {
+            GraphWriteHelpers.ValidateLabel(label);
 
-        var vid = VId(localId);
-        var propAssign = GraphWriteHelpers.BuildPropAssignments(props);
+            var tenantId = _getTenantId();
+            var vertexId = GraphWriteHelpers.ToVertexId(tenantId, localId);
 
-        // Upsert pattern: fold()/coalesce(addV) then property assignments
-        var script = $@"
-                        g.V('{vid}').fold().
-                          coalesce(unfold(), addV('{label}').property(id,'{vid}').property('tenantId','{T()}'))
-                          {propAssign}
-";
+            // Ensure vertex exists (create if not)
+            var upsertQuery =
+                "g.V(vid).fold().coalesce(" +
+                "unfold()," +
+                "addV(lbl).property('id', vid).property(tprop, tid)" +
+                ")";
 
-        await _g.SubmitAsync<dynamic>(script, cancellationToken: ct);
-    }
+            var upsertBindings = new Dictionary<string, object>
+            {
+                ["vid"] = vertexId,
+                ["lbl"] = label,
+                ["tid"] = tenantId,
+                ["tprop"] = GraphWriteHelpers.TenantPropertyName
+            };
 
-    /// <summary>Add or replace an edge between two local vertices (same tenant).</summary>
-    public async Task UpsertEdgeAsync(string outLocalId, string edgeLabel, string inLocalId, IDictionary<string, object?>? props = null, CancellationToken ct = default)
-    {
-        props ??= new Dictionary<string, object?>();
-        props["tenantId"] = T();
+            await _client.SubmitAsync<dynamic>(upsertQuery, upsertBindings, cancellationToken: ct).ConfigureAwait(false);
 
-        var outVid = VId(outLocalId);
-        var inVid = VId(inLocalId);
-        var propAssign = GraphWriteHelpers.BuildPropAssignments(props);
+            // Set/update properties, excluding reserved ones
+            var props = GraphWriteHelpers.WithTenantProperty(properties, tenantId);
+            foreach (var kv in props)
+            {
+                if (string.Equals(kv.Key, GraphWriteHelpers.TenantPropertyName, StringComparison.Ordinal))
+                {
+                    // Ensure tenant property is always enforced/update in case mismatch
+                    var pQuery = "g.V(vid).property(tprop, tid)";
+                    var pBindings = new Dictionary<string, object>
+                    {
+                        ["vid"] = vertexId,
+                        ["tprop"] = GraphWriteHelpers.TenantPropertyName,
+                        ["tid"] = tenantId
+                    };
+                    await _client.SubmitAsync<dynamic>(pQuery, pBindings, cancellationToken: ct).ConfigureAwait(false);
+                }
+                else
+                {
+                    var pQuery = "g.V(vid).has(tprop, tid).property(k, v)";
+                    var pBindings = new Dictionary<string, object>
+                    {
+                        ["vid"] = vertexId,
+                        ["tprop"] = GraphWriteHelpers.TenantPropertyName,
+                        ["tid"] = tenantId,
+                        ["k"] = kv.Key,
+                        ["v"] = kv.Value
+                    };
+                    await _client.SubmitAsync<dynamic>(pQuery, pBindings, cancellationToken: ct).ConfigureAwait(false);
+                }
+            }
+        }
 
-        // Remove existing edges with same label between those nodes for idempotence, then add
-        var script = $@"
-g.V('{outVid}').has('tenantId','{T()}')
- .outE('{edgeLabel}').has('tenantId','{T()}').where(inV().hasId('{inVid}').has('tenantId','{T()}')).drop();
-g.V('{outVid}').has('tenantId','{T()}')
- .addE('{edgeLabel}').property('tenantId','{T()}'){propAssign}
- .to(g.V('{inVid}').has('tenantId','{T()}'))
-";
+        // Upsert an edge between two tenant-scoped vertices, forbidding cross-tenant edges
+        public async Task UpsertEdgeAsync(string label, string outLocalId, string inLocalId, IDictionary<string, object>? properties = null, CancellationToken ct = default)
+        {
+            GraphWriteHelpers.ValidateLabel(label);
 
-        await _g.SubmitAsync<dynamic>(script, cancellationToken: ct);
-    }
+            var tenantId = _getTenantId();
+            var outId = GraphWriteHelpers.ToVertexId(tenantId, outLocalId);
+            var inId = GraphWriteHelpers.ToVertexId(tenantId, inLocalId);
 
-    /// <summary>Get a vertex property for a tenant-scoped vertex.</summary>
-    public async Task<string?> GetVertexPropertyAsync(string localId, string property, CancellationToken ct = default)
-    {
-        var vid = VId(localId);
-        var script = $@"g.V('{vid}').has('tenantId','{T()}').values('{property}').limit(1)";
-        var result = await _g.SubmitAsync<dynamic>(script, cancellationToken: ct);
-        return result.Count > 0 ? result[0]?.ToString() : null;
-    }
+            // Explicit guards against cross-tenant mistakes (defensive, since we constructed the ids)
+            GraphWriteHelpers.EnsureTenantMatches(tenantId, outId);
+            GraphWriteHelpers.EnsureTenantMatches(tenantId, inId);
 
-    /// <summary>Check if an edge exists between two tenant-scoped vertices.</summary>
-    public async Task<bool> EdgeExistsAsync(string outLocalId, string edgeLabel, string inLocalId, CancellationToken ct = default)
-    {
-        var outVid = VId(outLocalId);
-        var inVid = VId(inLocalId);
-        var script = $@"
-g.V('{outVid}').has('tenantId','{T()}')
- .outE('{edgeLabel}').has('tenantId','{T()}')
- .where(inV().hasId('{inVid}').has('tenantId','{T()}'))
- .limit(1).count()
-";
-        var result = await _g.SubmitAsync<long>(script, cancellationToken: ct);
-        return result.Count > 0 && result[0] > 0;
-    }
+            // Ensure both vertices exist and belong to tenant
+            if (!await _preconditions.VertexExistsAsync(outLocalId, ct).ConfigureAwait(false))
+            {
+                throw new InvalidOperationException($"Out-vertex does not exist for tenant '{tenantId}': '{outLocalId}'.");
+            }
 
-    /// <summary>Return the in-neighbors connected via edgeLabel (tenant-only).</summary>
-    public async Task<IReadOnlyList<string>> GetNeighborsAsync(string localId, string edgeLabel, CancellationToken ct = default)
-    {
-        var vid = VId(localId);
-        var script = $@"g.V('{vid}').has('tenantId','{T()}').outE('{edgeLabel}').has('tenantId','{T()}').inV().values('id')";
-        var ids = await _g.SubmitAsync<string>(script, cancellationToken: ct);
-        // Strip the "{tenantN}:" prefix to return local ids
-        var prefix = T() + ":";
-        return ids.Select(id => id.StartsWith(prefix, StringComparison.Ordinal) ? id[prefix.Length..] : id).ToList();
+            if (!await _preconditions.VertexExistsAsync(inLocalId, ct).ConfigureAwait(false))
+            {
+                throw new InvalidOperationException($"In-vertex does not exist for tenant '{tenantId}': '{inLocalId}'.");
+            }
+
+            // Upsert the edge and enforce tenant property
+            var upsertEdgeQuery =
+                "g.V(outId).has(tprop, tid).as('a')" +
+                ".V(inId).has(tprop, tid).as('b')" +
+                ".coalesce(" +
+                "select('a').outE(lbl).filter(inV().hasId(inId)).has(tprop, tid)," +
+                "addE(lbl).from('a').to('b').property(tprop, tid)" +
+                ")";
+
+            var bindings = new Dictionary<string, object>
+            {
+                ["outId"] = outId,
+                ["inId"] = inId,
+                ["lbl"] = label,
+                ["tid"] = tenantId,
+                ["tprop"] = GraphWriteHelpers.TenantPropertyName
+            };
+
+            await _client.SubmitAsync<dynamic>(upsertEdgeQuery, bindings, cancellationToken: ct).ConfigureAwait(false);
+
+            // Apply/update additional properties
+            var props = GraphWriteHelpers.WithTenantProperty(properties, tenantId);
+            foreach (var kv in props)
+            {
+                if (string.Equals(kv.Key, GraphWriteHelpers.TenantPropertyName, StringComparison.Ordinal))
+                {
+                    var q = "g.V(outId).outE(lbl).filter(inV().hasId(inId)).property(tprop, tid)";
+                    var b = new Dictionary<string, object>
+                    {
+                        ["outId"] = outId,
+                        ["inId"] = inId,
+                        ["lbl"] = label,
+                        ["tprop"] = GraphWriteHelpers.TenantPropertyName,
+                        ["tid"] = tenantId
+                    };
+                    await _client.SubmitAsync<dynamic>(q, b, cancellationToken: ct).ConfigureAwait(false);
+                }
+                else
+                {
+                    var q = "g.V(outId).has(tprop, tid).outE(lbl).filter(inV().hasId(inId)).has(tprop, tid).property(k, v)";
+                    var b = new Dictionary<string, object>
+                    {
+                        ["outId"] = outId,
+                        ["inId"] = inId,
+                        ["lbl"] = label,
+                        ["tid"] = tenantId,
+                        ["tprop"] = GraphWriteHelpers.TenantPropertyName,
+                        ["k"] = kv.Key,
+                        ["v"] = kv.Value
+                    };
+                    await _client.SubmitAsync<dynamic>(q, b, cancellationToken: ct).ConfigureAwait(false);
+                }
+            }
+        }
+
+        public async Task<dynamic?> GetVertexAsync(string localId, CancellationToken ct = default)
+        {
+            var tenantId = _getTenantId();
+            var vid = GraphWriteHelpers.ToVertexId(tenantId, localId);
+
+            var query = "g.V(vid).has(tprop, tid).limit(1)";
+            var bindings = new Dictionary<string, object>
+            {
+                ["vid"] = vid,
+                ["tid"] = tenantId,
+                ["tprop"] = GraphWriteHelpers.TenantPropertyName
+            };
+
+            var result = await _client.SubmitAsync<dynamic>(query, bindings, cancellationToken: ct).ConfigureAwait(false);
+            foreach (var r in result) return r;
+            return null;
+        }
+
+        public async Task<IReadOnlyCollection<dynamic>> QueryVerticesByLabelAsync(string label, CancellationToken ct = default)
+        {
+            GraphWriteHelpers.ValidateLabel(label);
+            var tenantId = _getTenantId();
+
+            var query = "g.V().hasLabel(lbl).has(tprop, tid)";
+            var bindings = new Dictionary<string, object>
+            {
+                ["lbl"] = label,
+                ["tid"] = tenantId,
+                ["tprop"] = GraphWriteHelpers.TenantPropertyName
+            };
+
+            return await _client.SubmitAsync<dynamic>(query, bindings, cancellationToken: ct).ConfigureAwait(false);
+        }
+
+        public async Task DeleteVertexAsync(string localId, CancellationToken ct = default)
+        {
+            var tenantId = _getTenantId();
+            var vid = GraphWriteHelpers.ToVertexId(tenantId, localId);
+
+            var query = "g.V(vid).has(tprop, tid).drop()";
+            var bindings = new Dictionary<string, object>
+            {
+                ["vid"] = vid,
+                ["tid"] = tenantId,
+                ["tprop"] = GraphWriteHelpers.TenantPropertyName
+            };
+
+            await _client.SubmitAsync<dynamic>(query, bindings, cancellationToken: ct).ConfigureAwait(false);
+        }
+
+        public async Task DeleteEdgeAsync(string label, string outLocalId, string inLocalId, CancellationToken ct = default)
+        {
+            GraphWriteHelpers.ValidateLabel(label);
+
+            var tenantId = _getTenantId();
+            var outId = GraphWriteHelpers.ToVertexId(tenantId, outLocalId);
+            var inId = GraphWriteHelpers.ToVertexId(tenantId, inLocalId);
+
+            var query =
+                "g.E().hasLabel(lbl).has(tprop, tid)" +
+                ".filter(outV().hasId(outId).and(inV().hasId(inId))).drop()";
+
+            var bindings = new Dictionary<string, object>
+            {
+                ["outId"] = outId,
+                ["inId"] = inId,
+                ["lbl"] = label,
+                ["tid"] = tenantId,
+                ["tprop"] = GraphWriteHelpers.TenantPropertyName
+            };
+
+            await _client.SubmitAsync<dynamic>(query, bindings, cancellationToken: ct).ConfigureAwait(false);
+        }
     }
 }

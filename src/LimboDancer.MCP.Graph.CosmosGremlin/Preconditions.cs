@@ -1,37 +1,102 @@
-using LimboDancer.MCP.Core.Tenancy;
+using System;
+using System.Collections.Generic;
+using System.Threading;
+using System.Threading.Tasks;
+using Gremlin.Net.Driver;
+using Microsoft.Extensions.Logging;
 
-namespace LimboDancer.MCP.Graph.CosmosGremlin;
-
-/// <summary>
-/// Read-only helpers used by planner/guard code to validate graph state before performing actions.
-/// All checks are tenant-scoped.
-/// </summary>
-public sealed class Preconditions
+namespace LimboDancer.MCP.Graph.CosmosGremlin
 {
-    private readonly GraphStore _graph;
-    private readonly ITenantAccessor _tenant;
-
-    public Preconditions(GraphStore graph, ITenantAccessor tenant)
+    public sealed class Preconditions
     {
-        _graph = graph;
-        _tenant = tenant;
+        private readonly IGremlinClient _client;
+        private readonly Func<string> _getTenantId;
+        private readonly ILogger<Preconditions> _logger;
+
+        public Preconditions(IGremlinClient client, Func<string> getTenantId, ILogger<Preconditions> logger)
+        {
+            _client = client ?? throw new ArgumentNullException(nameof(client));
+            _getTenantId = getTenantId ?? throw new ArgumentNullException(nameof(getTenantId));
+            _logger = logger ?? throw new ArgumentNullException(nameof(logger));
+        }
+
+        public async Task<bool> VertexExistsAsync(string localId, CancellationToken ct = default)
+        {
+            var tenantId = _getTenantId();
+            var vid = GraphWriteHelpers.ToVertexId(tenantId, localId);
+
+            var query = "g.V(vid).has(tprop, tid).limit(1).count()";
+            var bindings = new Dictionary<string, object>
+            {
+                ["vid"] = vid,
+                ["tid"] = tenantId,
+                ["tprop"] = GraphWriteHelpers.TenantPropertyName
+            };
+
+            var result = await _client.SubmitAsync<long>(query, bindings, cancellationToken: ct).ConfigureAwait(false);
+            var count = FirstOrDefault(result);
+            return count > 0;
+        }
+
+        public async Task<bool> EdgeExistsAsync(string label, string outLocalId, string inLocalId, CancellationToken ct = default)
+        {
+            GraphWriteHelpers.ValidateLabel(label);
+            var tenantId = _getTenantId();
+            var outId = GraphWriteHelpers.ToVertexId(tenantId, outLocalId);
+            var inId = GraphWriteHelpers.ToVertexId(tenantId, inLocalId);
+
+            var query = "g.V(outId).has(tprop, tid).outE(lbl)." +
+                        "filter(inV().hasId(inId)).has(tprop, tid).limit(1).count()";
+
+            var bindings = new Dictionary<string, object>
+            {
+                ["outId"] = outId,
+                ["inId"] = inId,
+                ["lbl"] = label,
+                ["tid"] = tenantId,
+                ["tprop"] = GraphWriteHelpers.TenantPropertyName
+            };
+
+            var result = await _client.SubmitAsync<long>(query, bindings, cancellationToken: ct).ConfigureAwait(false);
+            var count = FirstOrDefault(result);
+            return count > 0;
+        }
+
+        public async Task<bool> HasPropertyAsync(string localId, string key, object? value, CancellationToken ct = default)
+        {
+            GraphWriteHelpers.ValidatePropertyKey(key);
+            var tenantId = _getTenantId();
+            var vid = GraphWriteHelpers.ToVertexId(tenantId, localId);
+
+            string query;
+            var bindings = new Dictionary<string, object>
+            {
+                ["vid"] = vid,
+                ["tid"] = tenantId,
+                ["tprop"] = GraphWriteHelpers.TenantPropertyName,
+                ["k"] = key
+            };
+
+            if (value is null)
+            {
+                // Property exists regardless of value
+                query = "g.V(vid).has(tprop, tid).properties(k).limit(1).count()";
+            }
+            else
+            {
+                query = "g.V(vid).has(tprop, tid).has(k, v).limit(1).count()";
+                bindings["v"] = value;
+            }
+
+            var result = await _client.SubmitAsync<long>(query, bindings, cancellationToken: ct).ConfigureAwait(false);
+            var count = FirstOrDefault(result);
+            return count > 0;
+        }
+
+        private static T FirstOrDefault<T>(IReadOnlyCollection<T> results)
+        {
+            foreach (var r in results) return r;
+            return default!;
+        }
     }
-
-    /// <summary>Ensures a vertex has a non-empty property value.</summary>
-    public async Task<bool> HasPropertyAsync(string subjectLocalId, string property, CancellationToken ct = default)
-    {
-        var val = await _graph.GetVertexPropertyAsync(subjectLocalId, property, ct);
-        return !string.IsNullOrWhiteSpace(val);
-    }
-
-    /// <summary>Ensures there is an edge between two vertices.</summary>
-    public Task<bool> EdgeExistsAsync(string outLocalId, string edgeLabel, string inLocalId, CancellationToken ct = default)
-        => _graph.EdgeExistsAsync(outLocalId, edgeLabel, inLocalId, ct);
-
-    /// <summary>Ensures there is NO edge between two vertices.</summary>
-    public async Task<bool> EdgeNotExistsAsync(string outLocalId, string edgeLabel, string inLocalId, CancellationToken ct = default)
-        => !await _graph.EdgeExistsAsync(outLocalId, edgeLabel, inLocalId, ct);
-
-    /// <summary>Utility for diagnostics.</summary>
-    public Guid CurrentTenant() => _tenant.TenantId;
 }
