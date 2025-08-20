@@ -10,6 +10,8 @@ public sealed class MemoryDoc
     [JsonPropertyName("id")]
     public string Id { get; set; } = default!;
 
+    public Guid TenantId { get; set; }
+
     [JsonPropertyName("content")]
     public string Content { get; set; } = string.Empty;
 

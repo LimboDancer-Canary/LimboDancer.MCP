@@ -1,17 +1,59 @@
-﻿<Project Sdk="Microsoft.NET.Sdk">
+﻿<Project Sdk="Microsoft.NET.Sdk.Web">
 
-  <ItemGroup>
-    <ProjectReference Include="..\LimboDancer.MCP.Core\LimboDancer.MCP.Core.csproj" />
-    <ProjectReference Include="..\LimboDancer.MCP.Storage\LimboDancer.MCP.Storage.csproj" />
-    <ProjectReference Include="..\LimboDancer.MCP.Ontology\LimboDancer.MCP.Ontology.csproj" />
-    <ProjectReference Include="..\LimboDancer.MCP.Vector.AzureSearch\LimboDancer.MCP.Vector.AzureSearch.csproj" />
-    <ProjectReference Include="..\LimboDancer.MCP.Graph.CosmosGremlin\LimboDancer.MCP.Graph.CosmosGremlin.csproj" />
-  </ItemGroup>
+	<PropertyGroup>
+		<TargetFramework>net9.0</TargetFramework>
+		<Nullable>enable</Nullable>
+		<ImplicitUsings>enable</ImplicitUsings>
+		<LangVersion>latest</LangVersion>
+		<GenerateDocumentationFile>false</GenerateDocumentationFile>
+	</PropertyGroup>
 
-  <PropertyGroup>
-    <TargetFramework>net9.0</TargetFramework>
-    <ImplicitUsings>enable</ImplicitUsings>
-    <Nullable>enable</Nullable>
-  </PropertyGroup>
+	<!-- ASP.NET Core runtime (includes WebHost, DI, Logging, etc.) -->
+	<ItemGroup>
+		<FrameworkReference Include="Microsoft.AspNetCore.App" />
+	</ItemGroup>
+
+	<ItemGroup>
+		<!-- ✅ Official Model Context Protocol (MCP) SDK -->
+		<PackageReference Include="ModelContextProtocol" Version="0.3.0-preview.3" />
+		<PackageReference Include="ModelContextProtocol.AspNetCore" Version="0.3.0-preview.3" />
+		<PackageReference Include="ModelContextProtocol.Core" Version="0.3.0-preview.3" />
+
+		<!-- EF Core + Postgres (net9-compatible) -->
+		<PackageReference Include="Microsoft.EntityFrameworkCore" Version="9.0.0" />
+		<PackageReference Include="Microsoft.EntityFrameworkCore.Relational" Version="9.0.0" />
+		<PackageReference Include="Npgsql.EntityFrameworkCore.PostgreSQL" Version="9.0.0" />
+
+		<!-- Azure Search (vector retrieval) -->
+		<PackageReference Include="Azure.Search.Documents" Version="11.6.0" />
+
+		<!-- Gremlin (Cosmos DB Graph) -->
+		<PackageReference Include="Gremlin.Net" Version="3.7.2" />
+
+		<!-- Optional Azure messaging/storage if you wire events/blobs -->
+		<PackageReference Include="Azure.Messaging.ServiceBus" Version="7.19.0" />
+		<PackageReference Include="Azure.Storage.Blobs" Version="12.23.0" />
+
+		<!-- Config binding + options (net9) -->
+		<PackageReference Include="Microsoft.Extensions.Configuration.Binder" Version="9.0.0" />
+		<PackageReference Include="Microsoft.Extensions.Options.ConfigurationExtensions" Version="9.0.0" />
+
+		<!-- JSON + Observability -->
+		<PackageReference Include="System.Text.Json" Version="9.0.0" />
+		<PackageReference Include="Serilog.AspNetCore" Version="8.0.1" />
+		<PackageReference Include="OpenTelemetry.Extensions.Hosting" Version="1.8.1" />
+		<!-- Add specific exporters as needed, e.g. OTLP:
+    <PackageReference Include="OpenTelemetry.Exporter.OpenTelemetryProtocol" Version="1.8.1" /> -->
+	</ItemGroup>
+
+	<ItemGroup>
+		<!-- Project references in your solution (adjust paths if different) -->
+		<ProjectReference Include="..\LimboDancer.MCP.Core\LimboDancer.MCP.Core.csproj" />
+		<ProjectReference Include="..\LimboDancer.MCP.Storage\LimboDancer.MCP.Storage.csproj" />
+		<ProjectReference Include="..\LimboDancer.MCP.Vector.AzureSearch\LimboDancer.MCP.Vector.AzureSearch.csproj" />
+		<ProjectReference Include="..\LimboDancer.MCP.Graph.CosmosGremlin\LimboDancer.MCP.Graph.CosmosGremlin.csproj" />
+		<!-- Add when you commit the ontology runtime:
+    <ProjectReference Include="..\LimboDancer.MCP.Ontology\LimboDancer.MCP.Ontology.csproj" /> -->
+	</ItemGroup>
 
 </Project>

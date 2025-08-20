@@ -1,20 +1,28 @@
-﻿using System.Text.Json;
-using LimboDancer.MCP.Core;
+﻿using LimboDancer.MCP.Core;
+using LimboDancer.MCP.Core.Tenancy;
 using Microsoft.EntityFrameworkCore;
+using System.Text.Json;
 
 namespace LimboDancer.MCP.Storage;
 
 public sealed class ChatHistoryStore : IChatHistoryStore
 {
     private readonly ChatDbContext _db;
+    private readonly ITenantAccessor _tenant;
 
-    public ChatHistoryStore(ChatDbContext db) => _db = db;
+    public ChatHistoryStore(ChatDbContext db, ITenantAccessor tenant)
+    {
+        _db = db; _tenant = tenant;
+    }
 
     public async Task<Session> CreateSessionAsync(string userId, JsonDocument? tagsJson = null, CancellationToken ct = default)
     {
+        if (_tenant.TenantId == Guid.Empty) throw new InvalidOperationException("TenantId missing.");
+
         var s = new Session
         {
             Id = Guid.NewGuid(),
+            TenantId = _tenant.TenantId,
             UserId = userId,
             TagsJson = tagsJson,
             CreatedAt = DateTime.UtcNow
@@ -26,12 +34,16 @@ public sealed class ChatHistoryStore : IChatHistoryStore
 
     public async Task<Message> AppendMessageAsync(Guid sessionId, MessageRole role, string content, JsonDocument? toolCallsJson = null, CancellationToken ct = default)
     {
+        if (_tenant.TenantId == Guid.Empty) throw new InvalidOperationException("TenantId missing.");
+
+        // Query filter ensures tenant scoping; still do an exists check
         var exists = await _db.Sessions.AsNoTracking().AnyAsync(x => x.Id == sessionId, ct);
-        if (!exists) throw DomainException.NotFound($"Session {sessionId}");
+        if (!exists) throw new InvalidOperationException($"Session {sessionId} not found for tenant.");
 
         var m = new Message
         {
             Id = Guid.NewGuid(),
+            TenantId = _tenant.TenantId,
             SessionId = sessionId,
             Role = role,
             Content = content,

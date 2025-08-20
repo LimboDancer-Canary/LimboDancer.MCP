@@ -1,5 +1,9 @@
 var builder = WebApplication.CreateBuilder(args);
 
+builder.Services.AddHttpContextAccessor();
+builder.Services.AddScoped<LimboDancer.MCP.Core.Tenancy.ITenantAccessor, LimboDancer.MCP.McpServer.Http.Tenancy.HttpTenantAccessor>();
+
+
 // Add services to the container.
 // Learn more about configuring OpenAPI at https://aka.ms/aspnet/openapi
 builder.Services.AddOpenApi();

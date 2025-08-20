@@ -31,7 +31,7 @@ public sealed class SearchIndexBuilder
     {
         var fields = new List<SearchField>
         {
-            new SimpleField(KeyFieldName, SearchFieldDataType.String) { IsKey = true, IsFilterable = true },
+            new SimpleField("tenantId", SearchFieldDataType.String) { IsFilterable = true, IsFacetable = true },
             new SearchField(ContentFieldName, SearchFieldDataType.String) { IsSearchable = true },
             new SearchField(TagsFieldName, SearchFieldDataType.Collection(SearchFieldDataType.String)) { IsFilterable = true, IsFacetable = true },
             new SearchField(ExternalIdFieldName, SearchFieldDataType.String) { IsFilterable = true }
