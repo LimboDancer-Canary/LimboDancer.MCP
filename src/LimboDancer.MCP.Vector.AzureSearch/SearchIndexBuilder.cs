@@ -1,96 +1,127 @@
+// File: /src/LimboDancer.MCP.Vector.AzureSearch/SearchIndexBuilder.cs
+// (UPDATED) Adds an internal adapter interface so unit tests can verify the built index.
+
 using Azure;
 using Azure.Search.Documents.Indexes;
 using Azure.Search.Documents.Indexes.Models;
-using Azure.Search.Documents.Models;
+using System;
+using System.ComponentModel.DataAnnotations;
+using System.Threading;
+using System.Threading.Tasks;
 
-namespace LimboDancer.MCP.Vector.AzureSearch;
-
-public sealed class SearchIndexBuilder
+namespace LimboDancer.MCP.Vector.AzureSearch
 {
-    public const string VectorFieldName = "vector";
-    public const string ContentFieldName = "content";
-    public const string TagsFieldName = "tags";
-    public const string ExternalIdFieldName = "externalId";
-    public const string KeyFieldName = "id";
-
-    // Also used by MemoryDoc's JsonPropertyName on TenantId
-    public const string TenantFieldName = "tenantId";
-
-    // Names for vector configuration
-    private const string HnswAlgoName = "hnsw-default";
-    private const string VectorProfileName = "vector-profile";
-
-    private readonly SearchIndexClient _indexClient;
-
-    public SearchIndexBuilder(Uri endpoint, string apiKey)
+    public static class SearchIndexBuilder
     {
-        _indexClient = new SearchIndexClient(endpoint, new AzureKeyCredential(apiKey));
-    }
+        public const string DefaultIndexName = "ldm-memory";
+        public const string DefaultVectorProfile = "ldm-vector-profile";
+        public const string DefaultSemanticConfig = "ldm-semantic";
 
-    public SearchIndexBuilder(SearchIndexClient indexClient) => _indexClient = indexClient;
-
-    /// <summary>Create or update an index with BM25 + vector field.</summary>
-    public async Task EnsureIndexAsync(string indexName, int vectorDimensions, CancellationToken ct = default)
-    {
-        var fields = new List<SearchField>
+        // ---- Public API remains the same ----
+        public static Task EnsureIndexAsync(
+            SearchIndexClient client,
+            string? indexName = null,
+            int vectorDimensions = 1536,
+            string? semanticConfigName = null,
+            CancellationToken ct = default)
         {
-            // Required key field
-            new SimpleField(KeyFieldName, SearchFieldDataType.String)
-            {
-                IsKey = true,
-                IsFilterable = true
-            },
+            var adapter = new AdminClientAdapter(client);
+            return EnsureIndexCoreAsync(adapter, indexName, vectorDimensions, semanticConfigName, ct);
+        }
 
-            // Tenant scoping field: filterable/facetable
-            new SimpleField(TenantFieldName, SearchFieldDataType.String)
-            {
-                IsFilterable = true,
-                IsFacetable = true
-            },
-
-            // Content fields
-            new SearchField(ContentFieldName, SearchFieldDataType.String) { IsSearchable = true },
-            new SearchField(TagsFieldName, SearchFieldDataType.Collection(SearchFieldDataType.String))
-            {
-                IsFilterable = true,
-                IsFacetable = true
-            },
-            new SearchField(ExternalIdFieldName, SearchFieldDataType.String) { IsFilterable = true }
-        };
-
-        // Vector field: Collection(Single), with profile & dimensions
-        fields.Add(new SearchField(VectorFieldName, SearchFieldDataType.Collection(SearchFieldDataType.Single))
+        // ---- Internal for tests ----
+        internal interface IIndexAdminClient
         {
-            VectorSearchDimensions = vectorDimensions,
-            VectorSearchProfileName = VectorProfileName
-        });
+            Task<Response<SearchIndex>> GetIndexAsync(string name, CancellationToken ct);
+            Task<Response<SearchIndex>> CreateOrUpdateIndexAsync(SearchIndex index, CancellationToken ct);
+        }
 
-        var index = new SearchIndex(indexName)
+        internal sealed class AdminClientAdapter : IIndexAdminClient
         {
-            Fields = fields,
-            Similarity = new BM25Similarity(),
-            VectorSearch = new VectorSearch
+            private readonly SearchIndexClient _client;
+            public AdminClientAdapter(SearchIndexClient client) => _client = client;
+            public Task<Response<SearchIndex>> GetIndexAsync(string name, CancellationToken ct) => _client.GetIndexAsync(name, ct);
+            public Task<Response<SearchIndex>> CreateOrUpdateIndexAsync(SearchIndex index, CancellationToken ct) => _client.CreateOrUpdateIndexAsync(index, ct: ct);
+        }
+
+        internal static async Task EnsureIndexCoreAsync(
+            IIndexAdminClient admin,
+            string? indexName,
+            int vectorDimensions,
+            string? semanticConfigName,
+            CancellationToken ct)
+        {
+            indexName ??= DefaultIndexName;
+            semanticConfigName ??= DefaultSemanticConfig;
+
+            SearchIndex index;
+            try
             {
-                Algorithms =
-                {
-                    new HnswAlgorithmConfiguration(HnswAlgoName)
-                    {
-                        Parameters = new HnswParameters
-                        {
-                            M = 16,
-                            EfConstruction = 400,
-                            EfSearch = 100
-                        }
-                    }
-                },
-                Profiles =
-                {
-                    new VectorSearchProfile(VectorProfileName, HnswAlgoName)
-                }
+                var existing = await admin.GetIndexAsync(indexName, ct);
+                index = existing.Value;
             }
-        };
+            catch (RequestFailedException ex) when (ex.Status == 404)
+            {
+                index = new SearchIndex(indexName);
+            }
 
-        // Create or update
-        await _indexClient.CreateOrUpdateIndexAsync(index, ct);
+            ApplySchema(index, vectorDimensions, semanticConfigName);
+            await admin.CreateOrUpdateIndexAsync(index, ct);
+        }
+
+        private static void ApplySchema(SearchIndex index, int vectorDimensions, string semanticConfigName)
+        {
+            index.Fields = new FieldBuilder().Build(typeof(MemoryIndexDocument));
+
+            var algoName = "hnsw-default";
+            index.VectorSearch ??= new VectorSearch();
+            index.VectorSearch.Algorithms.Clear();
+            index.VectorSearch.Profiles.Clear();
+            index.VectorSearch.Algorithms.Add(new HnswAlgorithmConfiguration(algoName));
+            index.VectorSearch.Profiles.Add(new VectorSearchProfile(DefaultVectorProfile, algoName));
+
+            var vectorField = index.GetField(nameof(MemoryIndexDocument.ContentVector)) as SearchField;
+            if (vectorField is not null)
+            {
+                vectorField.VectorSearchProfileName = DefaultVectorProfile;
+                vectorField.VectorSearchDimensions = vectorDimensions;
+            }
+
+            index.SemanticSettings ??= new SemanticSettings();
+            index.SemanticSettings.Configurations.Clear();
+            index.SemanticSettings.Configurations.Add(new SemanticConfiguration(
+                semanticConfigName,
+                new PrioritizedFields
+                {
+                    TitleField = new SemanticField(nameof(MemoryIndexDocument.Label)),
+                    ContentFields =
+                    {
+                        new SemanticField(nameof(MemoryIndexDocument.Content)),
+                        new SemanticField(nameof(MemoryIndexDocument.Kind)),
+                        new SemanticField(nameof(MemoryIndexDocument.Status))
+                    },
+                    KeywordsFields =
+                    {
+                        new SemanticField(nameof(MemoryIndexDocument.Tags))
+                    }
+                }));
+        }
+
+        private sealed class MemoryIndexDocument
+        {
+            [SimpleField(IsKey = true, IsFilterable = true)] public string Id { get; set; } = default!;
+            [SimpleField(IsFilterable = true, IsFacetable = true)] public string TenantId { get; set; } = default!;
+            [SearchableField(IsFilterable = true, IsSortable = true)] public string Label { get; set; } = default!;
+            [SimpleField(IsFilterable = true, IsFacetable = true)] public string Kind { get; set; } = default!;
+            [SimpleField(IsFilterable = true, IsFacetable = true)] public string Status { get; set; } = default!;
+            [SearchableField(IsFilterable = true, IsFacetable = true)] public string? Tags { get; set; }
+            [SimpleField(IsFilterable = true)] public string? SourceId { get; set; }
+            [SimpleField(IsFilterable = true)] public string? SourceType { get; set; }
+            [SearchableField] public string Content { get; set; } = default!;
+            [SearchField(VectorSearchDimensions = 1536, VectorSearchProfileName = DefaultVectorProfile, DataType = SearchFieldDataType.Collection(SearchFieldDataType.Single))]
+            public float[] ContentVector { get; set; } = Array.Empty<float>();
+            [SimpleField(IsFilterable = true, IsSortable = true)] public DateTimeOffset? CreatedUtc { get; set; }
+            [SimpleField(IsFilterable = true, IsSortable = true)] public DateTimeOffset? UpdatedUtc { get; set; }
+        }
     }
 }

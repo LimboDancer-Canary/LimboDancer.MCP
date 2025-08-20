@@ -1,128 +1,334 @@
+// File: /src/LimboDancer.MCP.Vector.AzureSearch/VectorStore.cs
+// Purpose:
+//   Unified Azure AI Search client wrapper for memory docs with hybrid (text + vector) search,
+//   aligned with SearchIndexBuilder's constants and schema.
+//
+// Highlights:
+//   - Constructors: (a) SearchClient, (b) endpoint+key+(indexName)
+//   - Hybrid search: lex/semantic + vector query combined in one call
+//   - Tenant scoping: mandatory filter (when provided)
+//   - Field names & profiles match SearchIndexBuilder
+//
+// Dependencies: Azure.Search.Documents (v11+)
+
+using System;
+using System.Collections.Generic;
+using System.Linq;
+using System.Threading;
+using System.Threading.Tasks;
 using Azure;
+using Azure.Core;
 using Azure.Search.Documents;
-using Azure.Search.Documents.Indexes;
+using Azure.Search.Documents.Indexes.Models;
 using Azure.Search.Documents.Models;
 
-namespace LimboDancer.MCP.Vector.AzureSearch;
-
-/// <summary>
-/// Thin vector store over Azure AI Search with hybrid search.
-/// </summary>
-public sealed class VectorStore
+namespace LimboDancer.MCP.Vector.AzureSearch
 {
-    private readonly SearchClient _search;
-    private readonly SearchIndexBuilder _builder;
-    private readonly string _indexName;
-    private readonly int _dims;
-
-    public VectorStore(Uri endpoint, string apiKey, string indexName, int vectorDimensions)
+    public sealed class VectorStore
     {
-        _indexName = indexName;
-        _dims = vectorDimensions;
+        public string IndexName { get; }
+        public SearchClient Client { get; }
 
-        var indexClient = new SearchIndexClient(endpoint, new AzureKeyCredential(apiKey));
-        _builder = new SearchIndexBuilder(indexClient);
+        // Keep parity with SearchIndexBuilder
+        private const string DefaultIndexName = SearchIndexBuilder.DefaultIndexName;
+        private const string DefaultVectorProfile = SearchIndexBuilder.DefaultVectorProfile;
+        private const string DefaultSemanticConfig = SearchIndexBuilder.DefaultSemanticConfig;
 
-        _search = new SearchClient(endpoint, indexName, new AzureKeyCredential(apiKey));
-    }
-
-    /// <summary>
-    /// Ensures the index exists with the right schema.
-    /// </summary>
-    public Task EnsureIndexAsync(CancellationToken ct = default) =>
-        _builder.EnsureIndexAsync(_indexName, _dims, ct);
-
-    /// <summary>
-    /// Upsert documents. If a document has no <see cref="MemoryDoc.Vector"/> and an embedder is provided,
-    /// the embedder will be invoked to populate it.
-    /// </summary>
-    /// <param name="docs">Documents to upsert.</param>
-    /// <param name="embedIfMissing">If true and embedder provided, fill missing vectors.</param>
-    /// <param name="embedder">Delegate that returns a vector for the input text (usually doc.Content).</param>
-    public async Task UpsertAsync(IEnumerable<MemoryDoc> docs,
-                                  bool embedIfMissing = true,
-                                  Func<MemoryDoc, Task<float[]>>? embedder = null,
-                                  CancellationToken ct = default)
-    {
-        var list = new List<MemoryDoc>();
-        foreach (var d in docs)
+        // Index field names (single source of truth; must match SearchIndexBuilder.MemoryIndexDocument)
+        private static class F
         {
-            if (d.Vector is null && embedIfMissing && embedder is not null)
+            public const string Id = nameof(MemoryIndexDocument.Id);
+            public const string TenantId = nameof(MemoryIndexDocument.TenantId);
+            public const string Label = nameof(MemoryIndexDocument.Label);
+            public const string Kind = nameof(MemoryIndexDocument.Kind);
+            public const string Status = nameof(MemoryIndexDocument.Status);
+            public const string Tags = nameof(MemoryIndexDocument.Tags);
+            public const string Content = nameof(MemoryIndexDocument.Content);
+            public const string ContentVector = nameof(MemoryIndexDocument.ContentVector);
+            public const string CreatedUtc = nameof(MemoryIndexDocument.CreatedUtc);
+            public const string UpdatedUtc = nameof(MemoryIndexDocument.UpdatedUtc);
+        }
+
+        // -------------------------
+        // Constructors
+        // -------------------------
+
+        /// <summary>
+        /// Server/CLI can pass an already-constructed SearchClient (recommended for DI).
+        /// </summary>
+        public VectorStore(SearchClient client)
+        {
+            Client = client ?? throw new ArgumentNullException(nameof(client));
+            IndexName = client.IndexName;
+        }
+
+        /// <summary>
+        /// Convenience for CLI/server: build from endpoint+apiKey; optional explicit index name.
+        /// </summary>
+        public VectorStore(Uri endpoint, string apiKey, string? indexName = null)
+        {
+            if (endpoint is null) throw new ArgumentNullException(nameof(endpoint));
+            if (string.IsNullOrWhiteSpace(apiKey)) throw new ArgumentNullException(nameof(apiKey));
+
+            IndexName = string.IsNullOrWhiteSpace(indexName) ? DefaultIndexName : indexName!;
+            Client = new SearchClient(endpoint, IndexName, new AzureKeyCredential(apiKey));
+        }
+
+        // -------------------------
+        // Public API
+        // -------------------------
+
+        /// <summary>
+        /// Upsert (upload or merge) a batch of documents. All docs should carry TenantId.
+        /// </summary>
+        public async Task UploadAsync(IEnumerable<MemoryDoc> docs, CancellationToken ct = default)
+        {
+            var batch = IndexDocumentsBatch.Upload(docs.Select(ToIndexModel));
+            await Client.IndexDocumentsAsync(batch, ct);
+        }
+
+        /// <summary>
+        /// Delete a batch of documents by Id.
+        /// </summary>
+        public async Task DeleteAsync(IEnumerable<string> ids, CancellationToken ct = default)
+        {
+            var keys = ids.Select(id => new { Id = id }).ToArray();
+            var batch = IndexDocumentsBatch.Delete(keys);
+            await Client.IndexDocumentsAsync(batch, ct);
+        }
+
+        /// <summary>
+        /// Hybrid search: combines textual (semantic) query and vector KNN on Content/ContentVector.
+        /// Pass either/both of (queryText, vector). If both are null/empty, throws.
+        /// </summary>
+        /// <param name="tenantId">Optional tenant scope. If provided, enforced as a filter.</param>
+        /// <param name="queryText">Lexical/semantic query text (optional).</param>
+        /// <param name="vector">Embedding for vector similarity (optional).</param>
+        /// <param name="k">KNN neighbors to consider for vector scoring (default 50).</param>
+        /// <param name="top">How many results to return (default 20, max 1000).</param>
+        /// <param name="filter">Additional OData filter, ANDed with tenant filter.</param>
+        public async Task<IReadOnlyList<SearchResultItem>> HybridSearchAsync(
+            string? tenantId,
+            string? queryText,
+            float[]? vector,
+            int k = 50,
+            int top = 20,
+            string? filter = null,
+            CancellationToken ct = default)
+        {
+            if (string.IsNullOrWhiteSpace(queryText) && (vector is null || vector.Length == 0))
+                throw new ArgumentException("Provide queryText and/or vector.");
+
+            var options = BuildHybridOptions(
+                tenantId: tenantId,
+                queryTextProvided: !string.IsNullOrWhiteSpace(queryText),
+                k: k,
+                top: top,
+                filter: filter,
+                vector: vector
+            );
+
+            // Azure AI Search will blend scores when both Search and VectorSearch are provided.
+            // We select a compact projection; adjust if you need more fields.
+            var response = await Client.SearchAsync<SearchDocument>(queryText ?? "*", options, ct);
+
+            var items = new List<SearchResultItem>();
+            await foreach (var result in response.Value.GetResultsAsync())
             {
-                d.Vector = await embedder(d);
+                items.Add(ToItem(result));
             }
-            if (d.Vector is null)
-                throw new InvalidOperationException($"Doc {d.Id} has no vector and no embedder was provided.");
-
-            if (d.Vector.Length != _dims)
-                throw new InvalidOperationException($"Doc {d.Id} vector has length {d.Vector.Length}, expected {_dims}.");
-
-            list.Add(d);
+            return items;
         }
 
-        // Merge or upload
-        await _search.MergeOrUploadDocumentsAsync(list, cancellationToken: ct);
-    }
+        /// <summary>
+        /// Simple text-only semantic search (no vector).
+        /// </summary>
+        public Task<IReadOnlyList<SearchResultItem>> TextSearchAsync(
+            string? tenantId,
+            string queryText,
+            int top = 20,
+            string? filter = null,
+            CancellationToken ct = default)
+            => HybridSearchAsync(tenantId, queryText, vector: null, k: 0, top: top, filter: filter, ct);
 
-    public sealed record SearchHit(MemoryDoc Doc, double Score);
+        /// <summary>
+        /// Vector-only KNN search (no text).
+        /// </summary>
+        public Task<IReadOnlyList<SearchResultItem>> VectorSearchAsync(
+            string? tenantId,
+            float[] vector,
+            int k = 50,
+            int top = 20,
+            string? filter = null,
+            CancellationToken ct = default)
+            => HybridSearchAsync(tenantId, queryText: null, vector: vector, k: k, top: top, filter: filter, ct);
 
-    /// <summary>
-    /// Hybrid search (text + optional vector). If vector is null, it's standard keyword search.
-    /// </summary>
-    public async Task<IReadOnlyList<SearchHit>> SearchHybridAsync(
-        string? queryText,
-        float[]? vector,
-        int k = 5,
-        string? filterOData = null,
-        CancellationToken ct = default)
-    {
-        var options = new SearchOptions
+        // -------------------------
+        // Internal helpers
+        // -------------------------
+
+        private static IndexDocumentsAction<SearchDocument> ToIndexModel(MemoryDoc d)
         {
-            Size = k,
-            IncludeTotalCount = false
-        };
-
-        // Return the core fields; vectors usually aren't useful to retrieve
-        options.Select.AddRange(new[] { "id", "content", "tags", "externalId" });
-
-        // Scope the full-text search
-        options.SearchFields.AddRange(new[] { "content", "tags", "externalId" });
-
-        if (!string.IsNullOrWhiteSpace(filterOData))
-            options.Filter = filterOData;
-
-        // Attach vector part if provided
-        if (vector is not null)
-        {
-            if (vector.Length != _dims)
-                throw new InvalidOperationException($"Query vector length {vector.Length} != {_dims}.");
-
-            var vq = new VectorizedQuery(vector)
+            // Ensure required fields exist; Azure Search ignores nulls for some attributes but key is mandatory
+            var doc = new SearchDocument
             {
-                KNearestNeighborsCount = k
+                [F.Id] = d.Id,
+                [F.TenantId] = d.TenantId ?? string.Empty,
+                [F.Label] = d.Label ?? string.Empty,
+                [F.Kind] = d.Kind ?? string.Empty,
+                [F.Status] = d.Status ?? string.Empty,
+                [F.Tags] = d.Tags ?? string.Empty,
+                [F.Content] = d.Content ?? string.Empty,
+                [F.ContentVector] = d.ContentVector ?? Array.Empty<float>(),
+                [F.CreatedUtc] = d.CreatedUtc,
+                [F.UpdatedUtc] = d.UpdatedUtc
             };
-            vq.Fields.Add(SearchIndexBuilder.VectorFieldName);
 
-            options.VectorSearch = new VectorSearchOptions();
-            options.VectorSearch.Queries.Add(vq);
+            return IndexDocumentsAction.Upload(doc);
         }
 
-        // For pure vector search you can pass empty string; for hybrid, pass the query text.
-        var text = queryText ?? string.Empty;
-        var resp = await _search.SearchAsync<SearchDocument>(text, options, ct);
-
-        var results = new List<SearchHit>();
-        await foreach (var r in resp.Value.GetResultsAsync())
+        private static SearchOptions BuildHybridOptions(
+            string? tenantId,
+            bool queryTextProvided,
+            int k,
+            int top,
+            string? filter,
+            float[]? vector)
         {
-            var doc = new MemoryDoc
+            var options = new SearchOptions
             {
-                Id = (string)r.Document["id"],
-                Content = r.Document.TryGetValue("content", out var c) ? c?.ToString() ?? "" : "",
-                ExternalId = r.Document.TryGetValue("externalId", out var e) ? e?.ToString() : null,
-                Tags = r.Document.TryGetValue("tags", out var t) ? (t as IEnumerable<object>)?.Select(o => o.ToString()!).ToArray() : null
+                Size = Math.Clamp(top, 1, 1000),
+                IncludeTotalCount = false
             };
-            results.Add(new SearchHit(doc, r.Score ?? 0));
+
+            // Projection
+            options.Select.Add(F.Id);
+            options.Select.Add(F.TenantId);
+            options.Select.Add(F.Label);
+            options.Select.Add(F.Kind);
+            options.Select.Add(F.Status);
+            options.Select.Add(F.Tags);
+            options.Select.Add(F.CreatedUtc);
+            options.Select.Add(F.UpdatedUtc);
+
+            // Semantic when text query exists
+            if (queryTextProvided)
+            {
+                options.QueryType = SearchQueryType.Semantic;
+                options.SemanticSearch = new SemanticSearchOptions
+                {
+                    ConfigurationName = DefaultSemanticConfig
+                };
+            }
+
+            // Vector query (hybrid when combined with text)
+            if (vector is not null && vector.Length > 0)
+            {
+                options.VectorSearch = new()
+                {
+                    Queries =
+                    {
+                        new VectorQuery
+                        {
+                            Vector = vector,
+                            KNearestNeighborsCount = k > 0 ? k : 50,
+                            Fields = F.ContentVector,
+                            // Ensure this matches SearchIndexBuilder profile
+                            Profile = DefaultVectorProfile
+                        }
+                    }
+                };
+            }
+
+            // Tenant filter + additional filter
+            var filters = new List<string>();
+            if (!string.IsNullOrWhiteSpace(tenantId))
+                filters.Add($"{F.TenantId} eq '{EscapeODataString(tenantId)}'");
+
+            if (!string.IsNullOrWhiteSpace(filter))
+                filters.Add($"({filter})");
+
+            if (filters.Count > 0)
+                options.Filter = string.Join(" and ", filters);
+
+            return options;
         }
-        return results;
+
+        private static string EscapeODataString(string value)
+            => value.Replace("'", "''");
+
+        private static SearchResultItem ToItem(SearchResult<SearchDocument> r)
+        {
+            var d = r.Document;
+
+            string? GetString(string key) => d.TryGetValue(key, out var val) ? val as string : null;
+            DateTimeOffset? GetDto(string key) => d.TryGetValue(key, out var val) ? val as DateTimeOffset? : null;
+
+            return new SearchResultItem
+            {
+                Id = GetString(F.Id)!,
+                TenantId = GetString(F.TenantId),
+                Label = GetString(F.Label),
+                Kind = GetString(F.Kind),
+                Status = GetString(F.Status),
+                Tags = GetString(F.Tags),
+                CreatedUtc = GetDto(F.CreatedUtc),
+                UpdatedUtc = GetDto(F.UpdatedUtc),
+                Score = r.Score
+            };
+        }
+
+        // -------------------------
+        // Public models
+        // -------------------------
+
+        /// <summary>
+        /// Public ingestion/search model (external to index POCO).
+        /// Ensure TenantId is populated at ingestion time.
+        /// </summary>
+        public sealed class MemoryDoc
+        {
+            public string Id { get; set; } = default!;
+            public string? TenantId { get; set; }
+            public string? Label { get; set; }
+            public string? Kind { get; set; }
+            public string? Status { get; set; }
+            public string? Tags { get; set; }
+            public string Content { get; set; } = string.Empty;
+            public float[] ContentVector { get; set; } = Array.Empty<float>();
+            public DateTimeOffset? CreatedUtc { get; set; }
+            public DateTimeOffset? UpdatedUtc { get; set; }
+        }
+
+        public sealed class SearchResultItem
+        {
+            public string Id { get; set; } = default!;
+            public string? TenantId { get; set; }
+            public string? Label { get; set; }
+            public string? Kind { get; set; }
+            public string? Status { get; set; }
+            public string? Tags { get; set; }
+            public DateTimeOffset? CreatedUtc { get; set; }
+            public DateTimeOffset? UpdatedUtc { get; set; }
+            public double? Score { get; set; }
+        }
+
+        // -------------------------
+        // Internal index POCO (for reference only; not used directly)
+        // -------------------------
+        // This mirrors SearchIndexBuilder.MemoryIndexDocument. Kept here purely to reduce magic strings.
+        private sealed class MemoryIndexDocument
+        {
+            public string Id { get; set; } = default!;
+            public string TenantId { get; set; } = default!;
+            public string Label { get; set; } = default!;
+            public string Kind { get; set; } = default!;
+            public string Status { get; set; } = default!;
+            public string? Tags { get; set; }
+            public string Content { get; set; } = default!;
+            public float[] ContentVector { get; set; } = Array.Empty<float>();
+            public DateTimeOffset? CreatedUtc { get; set; }
+            public DateTimeOffset? UpdatedUtc { get; set; }
+        }
     }
 }

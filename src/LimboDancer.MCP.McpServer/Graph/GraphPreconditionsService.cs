@@ -7,7 +7,7 @@ namespace LimboDancer.MCP.McpServer.Graph;
 
 /// <summary>
 /// Evaluates ontology-bound preconditions against the tenant-scoped graph.
-/// This mirrors the design doc evaluator and ensures property mapping from ontology URIs to graph keys.
+/// Maps ontology predicates (CURIE/IRI/local) to graph property keys.
 /// </summary>
 public sealed class GraphPreconditionsService
 {
@@ -26,22 +26,28 @@ public sealed class GraphPreconditionsService
         ToolPrecondition precondition,
         CancellationToken ct = default)
     {
-        // The GraphStore is expected to enforce tenant guards internally; we only pass local ids here.
+        // Resolve current scope (used for diagnostics; GraphStore may enforce guards internally).
+        var scope = _scope.GetCurrentScope();
+
+        // If no predicate/value provided, treat as a simple existence probe by reading the "name"/label field.
         if (string.IsNullOrWhiteSpace(precondition.Predicate) && string.IsNullOrWhiteSpace(precondition.Equals))
         {
-            // Existence check using a cheap probe
-            var label = await _graph.GetVertexPropertyAsync(subjectId, Kg.Fields.Label, ct);
-            return string.IsNullOrEmpty(label)
-                ? PreconditionCheckResult.Fail($"Subject {subjectLabel}/{subjectId} not found.")
+            var labelValue = await _graph.GetVertexPropertyAsync(subjectId, Kg.Name, ct);
+            return string.IsNullOrEmpty(labelValue)
+                ? PreconditionCheckResult.Fail($"[{scope}] Subject {subjectLabel}/{subjectId} not found.")
                 : PreconditionCheckResult.Pass();
         }
 
         var key = MapPropertyKey(precondition.Predicate);
+
         if (!string.IsNullOrWhiteSpace(precondition.Equals))
         {
             var value = await _graph.GetVertexPropertyAsync(subjectId, key, ct);
             if (!string.Equals(value, precondition.Equals, StringComparison.OrdinalIgnoreCase))
-                return PreconditionCheckResult.Fail($"Precondition failed: {key} != {precondition.Equals} (actual: {value ?? "<null>"})");
+            {
+                var actual = value is null ? "<null>" : value;
+                return PreconditionCheckResult.Fail($"[{scope}] Precondition failed: {key} != {precondition.Equals} (actual: {actual})");
+            }
         }
 
         return PreconditionCheckResult.Pass();
@@ -63,18 +69,37 @@ public sealed class GraphPreconditionsService
 
     private static string MapPropertyKey(string? ontologyPredicate)
     {
+        // Default to a human-friendly label/name field when the predicate is empty.
         if (string.IsNullOrWhiteSpace(ontologyPredicate))
-            return Kg.Fields.Label;
+            return Kg.Name;
 
-        // Known mappings to graph field names
-        if (ontologyPredicate == Ldm.Properties.Status) return Kg.Fields.Status;
-        if (ontologyPredicate == Ldm.Properties.Label) return Kg.Fields.Label;
-        if (ontologyPredicate == Ldm.Properties.Kind) return Kg.Fields.Kind;
+        var s = ontologyPredicate.Trim();
 
-        // Fallback: last segment after ':' or '/'
-        var s = ontologyPredicate!;
-        var idx = Math.Max(s.LastIndexOf(':'), s.LastIndexOf('/'));
-        return idx >= 0 && idx < s.Length - 1 ? s[(idx + 1)..] : s;
+        // Derive a local name from CURIE/IRI: prefer last ':' segment, else last '/' segment.
+        var lastColon = s.LastIndexOf(':');
+        var lastSlash = s.LastIndexOf('/');
+        var idx = Math.Max(lastColon, lastSlash);
+        var local = idx >= 0 && idx < s.Length - 1 ? s[(idx + 1)..] : s;
+
+        switch (local.ToLowerInvariant())
+        {
+            case "label":
+            case "name":
+                return Kg.Name;
+
+            case "type":
+            case "kind":
+                // Prefer standardized "type" field if available.
+                return Kg.Type;
+
+            case "status":
+                // Use a conventional 'status' field when present in the graph.
+                return "status";
+
+            default:
+                // Unknown predicate -> use its local name as-is.
+                return local;
+        }
     }
 }
 

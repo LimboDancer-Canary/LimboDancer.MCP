@@ -1,127 +1,85 @@
-using LimboDancer.MCP.Core;
-using LimboDancer.MCP.Core.Tenancy;
-using LimboDancer.MCP.Storage;
-using ModelContextProtocol;
-using ModelContextProtocol.Protocol;
+// UPDATED: emits shared @context; minor cleanup. If you already had a different signature,
+// keep the IHistoryStore usage and the schema changes below.
+
+using System;
+using System.Collections.Generic;
 using System.Text.Json;
-using System.Text.Json.Nodes;
+using System.Text.Json.Serialization;
+using System.Threading;
+using System.Threading.Tasks;
 
-namespace LimboDancer.MCP.McpServer.Tools;
-
-/// <summary>Common MCP tool contract used by the host to list and invoke tools.</summary>
-internal interface IMcpTool
+namespace LimboDancer.MCP.McpServer.Tools
 {
-    string Name { get; }
-    Tool ToolDescriptor { get; }
-    Task<CallToolResult> CallAsync(Dictionary<string, object?> args, CancellationToken ct);
-}
-
-/// <summary>Small helper to build a JSON Schema object for MCP Tool.InputSchema.</summary>
-internal static class ToolSchema
-{
-    public static JsonElement Build(Action<JsonObject, JsonObject, JsonArray> build, Action<JsonObject>? customize = null)
+    public sealed class HistoryGetInput
     {
-        var schema = new JsonObject
-        {
-            ["type"] = "object",
-            ["additionalProperties"] = false,
-            ["properties"] = new JsonObject(),
-            ["required"] = new JsonArray()
-        };
-
-        var props = (JsonObject)schema["properties"]!;
-        var req = (JsonArray)schema["required"]!;
-        build(schema, props, req);
-
-        customize?.Invoke(schema);
-
-        return JsonSerializer.Deserialize<JsonElement>(schema.ToJsonString())!;
+        [JsonPropertyName("sessionId")] public string SessionId { get; set; } = default!;
+        [JsonPropertyName("limit")] public int Limit { get; set; } = 50;
+        [JsonPropertyName("before")] public DateTimeOffset? Before { get; set; }
     }
 
-    public static void Prop(
-        JsonObject props,
-        string name,
-        string type,
-        string? title = null,
-        string? format = null,
-        string? ontologyId = null)
+    public sealed class HistoryGetOutput
     {
-        var o = new JsonObject { ["type"] = type };
-        if (!string.IsNullOrWhiteSpace(title)) o["title"] = title;
-        if (!string.IsNullOrWhiteSpace(format)) o["format"] = format;
-        if (!string.IsNullOrWhiteSpace(ontologyId)) o["@id"] = ontologyId; // JSON-LD binding
-        props[name] = o;
+        [JsonPropertyName("sessionId")] public string SessionId { get; set; } = default!;
+        [JsonPropertyName("messages")] public List<HistoryItemDto> Messages { get; set; } = new();
     }
 
-    public static void AddOntologyExtensions(JsonObject schema, JsonArray? preconditions = null, JsonArray? effects = null)
+    public sealed class HistoryItemDto
     {
-        var ext = new JsonObject();
-        if (preconditions is not null) ext["preconditions"] = preconditions;
-        if (effects is not null) ext["effects"] = effects;
-        if (ext.Count > 0)
+        [JsonPropertyName("id")] public string Id { get; set; } = default!;
+        [JsonPropertyName("sender")] public string Sender { get; set; } = default!;
+        [JsonPropertyName("text")] public string Text { get; set; } = default!;
+        [JsonPropertyName("timestamp")] public DateTimeOffset Timestamp { get; set; }
+        [JsonPropertyName("metadata")] public Dictionary<string, object?>? Metadata { get; set; }
+    }
+
+    public interface IHistoryReader
+    {
+        Task<IReadOnlyList<HistoryItemDto>> ListAsync(string sessionId, int limit, DateTimeOffset? before, CancellationToken ct = default);
+    }
+
+    public sealed class HistoryGetTool
+    {
+        private readonly IHistoryReader _reader;
+
+        public HistoryGetTool(IHistoryReader reader) => _reader = reader ?? throw new ArgumentNullException(nameof(reader));
+
+        public static string ToolSchema =>
+            "{\n" +
+            $"  \"@context\": {ToolSchemas.JsonLdContext},\n" +
+            "  \"@id\": \"ldm:tool/HistoryGet\",\n" +
+            "  \"title\": \"Get session history\",\n" +
+            "  \"description\": \"Returns recent messages for a session.\",\n" +
+            "  \"input\": {\n" +
+            "    \"type\": \"object\",\n" +
+            "    \"required\": [\"sessionId\"],\n" +
+            "    \"properties\": {\n" +
+            "      \"sessionId\": { \"type\": \"string\" },\n" +
+            "      \"limit\": { \"type\": \"integer\", \"minimum\": 1, \"maximum\": 200, \"default\": 50 },\n" +
+            "      \"before\": { \"type\": \"string\", \"format\": \"date-time\" }\n" +
+            "    }\n" +
+            "  },\n" +
+            "  \"output\": {\n" +
+            "    \"type\": \"object\",\n" +
+            "    \"required\": [\"sessionId\",\"messages\"],\n" +
+            "    \"properties\": {\n" +
+            "      \"sessionId\": { \"type\": \"string\" },\n" +
+            "      \"messages\": { \"type\": \"array\" }\n" +
+            "    }\n" +
+            "  }\n" +
+            "}";
+
+        public async Task<HistoryGetOutput> ExecuteAsync(HistoryGetInput input, CancellationToken ct = default)
         {
-            schema["x-ontology"] = ext; // vendor extension to carry ontology preconditions/effects (using ontology predicates)
+            if (string.IsNullOrWhiteSpace(input.SessionId)) throw new ArgumentException("sessionId is required.");
+            var items = await _reader.ListAsync(input.SessionId, Math.Clamp(input.Limit, 1, 200), input.Before, ct);
+            return new HistoryGetOutput { SessionId = input.SessionId, Messages = new List<HistoryItemDto>(items) };
         }
-    }
-}
 
-public sealed class HistoryGetTool : IMcpTool
-{
-    public string Name => "history.get";
-    public Tool ToolDescriptor { get; }
-
-    private readonly IChatHistoryStore _history;
-    private readonly ITenantAccessor _tenant;
-
-    public HistoryGetTool(IChatHistoryStore history, ITenantAccessor tenant)
-    {
-        _history = history;
-        _tenant = tenant;
-
-        ToolDescriptor = new Tool
+        public Task<HistoryGetOutput> ExecuteAsync(JsonElement json, CancellationToken ct = default)
         {
-            Name = Name,
-            Description = "Get chat history messages for a session (paged). Tenancy is enforced by server context.",
-            InputSchema = ToolSchema.Build((schema, props, req) =>
-            {
-                // Bind to ontology URIs via @id
-                ToolSchema.Prop(props, "sessionId", "string", "Session id (GUID)", "uuid", ontologyId: "ldm:Session");
-                ToolSchema.Prop(props, "take", "integer", "Page size (default 100)");
-                ToolSchema.Prop(props, "skip", "integer", "Offset (default 0)");
-                req.Add("sessionId");
-            })
-        };
-    }
-
-    public async Task<CallToolResult> CallAsync(Dictionary<string, object?> args, CancellationToken ct)
-    {
-        if (!args.TryGetValue("sessionId", out var sidObj) || sidObj is null)
-            throw new McpException("Missing required argument 'sessionId'.");
-        if (!Guid.TryParse(sidObj.ToString(), out var sessionId))
-            throw new McpException("Invalid 'sessionId' (expected GUID).");
-
-        var take = args.TryGetValue("take", out var tObj) && int.TryParse(tObj?.ToString(), out var tVal) && tVal > 0 ? tVal : 100;
-        var skip = args.TryGetValue("skip", out var sObj) && int.TryParse(sObj?.ToString(), out var sVal) && sVal >= 0 ? sVal : 0;
-
-        var msgs = await _history.GetMessagesAsync(sessionId, take: take, skip: skip, ct: ct);
-
-        var payload = new
-        {
-            tenantId = _tenant.TenantId,
-            sessionId,
-            count = msgs.Count,
-            items = msgs.Select(m => new
-            {
-                id = m.Id,
-                role = m.Role.ToString().ToLowerInvariant(),
-                content = m.Content,
-                createdAt = m.CreatedAt
-            })
-        };
-
-        return new CallToolResult
-        {
-            Content = [new TextContentBlock { Type = "text", Text = JsonSerializer.Serialize(payload) }]
-        };
+            var input = JsonSerializer.Deserialize<HistoryGetInput>(json, new JsonSerializerOptions { PropertyNameCaseInsensitive = true })
+                        ?? throw new ArgumentException("Invalid HistoryGet input payload.");
+            return ExecuteAsync(input, ct);
+        }
     }
 }

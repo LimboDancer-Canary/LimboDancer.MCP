@@ -1,94 +1,269 @@
 ﻿@page "/ontology/validators"
-@using LimboDancer.MCP.BlazorConsole.Services
-@inject OntologyValidationService Validation
-@inject IConfiguration Config
+@using System.Net
+@inject OntologyValidationService ValidationService
+@inject NavigationManager Nav
+@inject ILogger<OntologyValidators> Logger
 
-<CascadingParameter] TenantUiState TenantState { get; set; }=default!;
+<PageTitle>Ontology • Validators</PageTitle>
 
-<div class="content-inner">
-    <h2>Ontology Validators</h2>
+<h1 class="page-title">Ontology Validators</h1>
 
-    <div class="searchpanel">
-        <span>Tenant:</span>
-        <input class="text" value="@TenantState.TenantLabel" disabled />
-        <button class="btn small" @onclick="Run">Run validators</button>
+@if (string.IsNullOrWhiteSpace(CurrentTenantId))
+{
+    <div class="empty-tenant">
+        <h3>No tenant selected</h3>
+        <p>
+            This page runs ontology validators against the server for the <em>current tenant</em>.
+            Please select a tenant first.
+        </p>
+        <div class="actions">
+            <button class="btn btn-primary" @onclick="NavigateToTenantSettings">Go to Tenant Settings</button>
+        </div>
     </div>
-
-@if (_error is not null)
-{
-            <div style="color:#ff8a80">@_error</div>
-}
-
-@if (_loading)
-{
-            <div>Running validators...</div>
-}
-else if (_results.Count == 0)
-{
-            <div>No validator outcomes.</div>
 }
 else
 {
-            <table class="grid-table">
-                <thead>
-                <tr>
-                    <th>When</th>
-                    <th>Severity</th>
-                    <th>Kind</th>
-                    <th>Id</th>
-                    <th>Message</th>
-                </tr>
-                </thead>
-                <tbody>
-                @foreach (var r in _results)
-                {
-                        <tr>
-                            <td>@r.At.ToString("u")</td>
-                            <td>@r.Severity</td>
-                            <td>@r.Kind</td>
-                            <td>@r.Id</td>
-                            <td>@r.Message</td>
-                        </tr>
-                }
-                </tbody>
-            </table>
-}
-</div>
+    <div class="tenant-banner">
+        <span class="label">Tenant:</span>
+        <span class="value">@CurrentTenantId</span>
+    </div>
 
-@code
-{
-    private bool _loading;
-    private string? _error;
-    private List<ValidatorOutcome> _results = new();
+    <div class="controls">
+        <button class="btn btn-primary" @onclick="RunValidation" disabled="@_busy">Run Validation</button>
+        <button class="btn btn-secondary" @onclick="ExportOntology" disabled="@_busy">Export Ontology</button>
+    </div>
 
-    protected override async Task OnInitializedAsync()
+    @if (_busy)
     {
-        // Optionally auto-run in development if Tenant exists
-        if (TenantState.HasTenant && (Config["AutoRunValidatorsOnLoad"] ?? "false").Equals("true", StringComparison.OrdinalIgnoreCase))
-        {
-            await Run();
-        }
+        <div class="status info">Running…</div>
     }
 
-    private async Task Run()
+    @if (!string.IsNullOrEmpty(_error))
+    {
+        <div class="status error">@_error</div>
+    }
+
+    @if (_result is not null)
+    {
+        <div class="results">
+            <h3>Validation Result</h3>
+            @if (_result.IsSuccess)
+            {
+                <div class="status success">✅ Validation passed.</div>
+            }
+            else
+            {
+                <div class="status warn">⚠️ Validation completed with issues.</div>
+            }
+
+            @if (_result.Messages?.Count > 0)
+            {
+                <ul class="messages">
+                    @foreach (var m in _result.Messages)
+                    {
+                        <li>@m</li>
+                    }
+                </ul>
+            }
+        </div>
+    }
+}
+
+@code {
+    // ✅ Correct attribute spelling + proper cascade usage
+    [CascadingParameter] public TenantUiState? TenantUiState { get; set; }
+
+    private string CurrentTenantId => TenantUiState?.CurrentTenantId ?? string.Empty;
+
+    private bool _busy;
+    private string? _error;
+
+    // Keep this model minimal so it tolerates service evolution.
+    private ValidationResultDto? _result;
+
+    private async Task RunValidation()
     {
         _error = null;
-        _results.Clear();
-        if (!TenantState.HasTenant) { _error = "No tenant selected."; return; }
+        _result = null;
 
-        _loading = true;
+        if (string.IsNullOrWhiteSpace(CurrentTenantId))
+        {
+            _error = "Tenant is not set.";
+            return;
+        }
+
         try
         {
-            _results = (await Validation.RunAsync(TenantState.TenantId!.Value, package: "default", channel: "dev")).ToList();
+            _busy = true;
+            _result = await ValidationService.ValidateAsync(CurrentTenantId);
+        }
+        catch (HttpRequestException ex)
+        {
+            Logger.LogWarning(ex, "Ontology validate failed.");
+            _error = $"Server unreachable or endpoint missing. {ex.Message}";
         }
         catch (Exception ex)
         {
-            _error = ex.Message;
+            Logger.LogError(ex, "Unexpected error running ontology validation.");
+            _error = $"Unexpected error: {ex.Message}";
         }
         finally
         {
-            _loading = false;
+            _busy = false;
             StateHasChanged();
         }
     }
+
+    private async Task ExportOntology()
+    {
+        _error = null;
+
+        if (string.IsNullOrWhiteSpace(CurrentTenantId))
+        {
+            _error = "Tenant is not set.";
+            return;
+        }
+
+        try
+        {
+            _busy = true;
+            var exported = await ValidationService.ExportAsync(CurrentTenantId);
+            // Basic UX: prompt a download by routing to a data URL (or you can push to a download service)
+            var fileName = $"ontology-export-{CurrentTenantId}-{DateTime.UtcNow:yyyyMMddHHmmss}.json";
+            await BlazorDownload(fileName, exported);
+        }
+        catch (HttpRequestException ex)
+        {
+            Logger.LogWarning(ex, "Ontology export failed.");
+            _error = $"Server unreachable or endpoint missing. {ex.Message}";
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Unexpected error exporting ontology.");
+            _error = $"Unexpected error: {ex.Message}";
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+
+    private void NavigateToTenantSettings()
+    {
+        // Adjust to your actual route where the tenant can be selected/changed
+        Nav.NavigateTo("/settings/tenant");
+    }
+
+    // Minimal JS interop-free download helper using data URI via NavigationManager.
+    // If you already have a download service/JS, swap this out.
+    private Task BlazorDownload(string filename, string json)
+    {
+        var bytes = System.Text.Encoding.UTF8.GetBytes(json ?? "{}");
+        var base64 = Convert.ToBase64String(bytes);
+        var url = $"data:application/json;base64,{base64}";
+        Nav.NavigateTo(url, forceLoad: true);
+        return Task.CompletedTask;
+    }
+
+    // DTO aligned with OntologyValidationService contract. Keep it forgiving.
+    private sealed class ValidationResultDto
+    {
+        public bool IsSuccess { get; set; }
+        public List<string>? Messages { get; set; }
+    }
 }
+
+/* ----------------------------
+   Styles (scoped to this page)
+-----------------------------*/
+<style>
+    .page-title {
+        margin-bottom: 0.75rem;
+    }
+
+    .tenant-banner {
+        margin: 0.5rem 0 1rem;
+    }
+
+        .tenant-banner .label {
+            font-weight: 600;
+            margin-right: 0.5rem;
+        }
+
+    .controls {
+        display: flex;
+        gap: .5rem;
+        margin-bottom: .75rem;
+    }
+
+    .status {
+        margin: .5rem 0;
+        padding: .5rem .75rem;
+        border-radius: .35rem;
+    }
+
+        .status.info {
+            background: #eef5ff;
+            border: 1px solid #cfe2ff;
+        }
+
+        .status.success {
+            background: #e8f5e9;
+            border: 1px solid #c8e6c9;
+        }
+
+        .status.warn {
+            background: #fff8e1;
+            border: 1px solid #ffe082;
+        }
+
+        .status.error {
+            background: #ffebee;
+            border: 1px solid #ffcdd2;
+        }
+
+    .empty-tenant {
+        background: #fffdf5;
+        border: 1px dashed #e0c97f;
+        padding: 1rem;
+        border-radius: .5rem;
+    }
+
+        .empty-tenant .actions {
+            margin-top: .75rem;
+        }
+
+    .btn {
+        padding: .45rem .8rem;
+        border: 1px solid #ccc;
+        border-radius: .35rem;
+        cursor: pointer;
+    }
+
+    .btn-primary {
+        background: #0d6efd;
+        border-color: #0d6efd;
+        color: white;
+    }
+
+        .btn-primary:disabled, .btn-secondary:disabled {
+            opacity: .6;
+            cursor: not-allowed;
+        }
+
+    .btn-secondary {
+        background: #f5f5f5;
+    }
+
+    .results .messages {
+        margin-top: .5rem;
+    }
+</style>
+
+@* Add this entry to your navigation menu (usually /Shared/NavMenu.razor):
+<li class="nav-item px-3">
+    <NavLink class="nav-link" href="/ontology/validators" Match="NavLinkMatch.Prefix">
+        <span class="oi oi-list-rich" aria-hidden="true"></span> Ontology Validators
+    </NavLink>
+</li>
+*@

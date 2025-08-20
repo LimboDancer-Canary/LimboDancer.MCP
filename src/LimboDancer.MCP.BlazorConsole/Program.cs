@@ -1,56 +1,84 @@
-using Azure;
-using Azure.Search.Documents;
-using Azure.Search.Documents.Indexes;
-using LimboDancer.MCP.Graph.CosmosGremlin;
-using LimboDancer.MCP.Storage;
-using Microsoft.EntityFrameworkCore;
+// File: /src/LimboDancer.MCP.BlazorConsole/Program.cs
+
+using System.Net.Http.Headers;
+using LimboDancer.MCP.BlazorConsole.Services;
+using Microsoft.Extensions.Options;
+
+using LimboDancer.MCP.BlazorConsole.Services;
+using LimboDancer.MCP.Ontology.Mapping;
 
 var builder = WebApplication.CreateBuilder(args);
 
-// Config
-var cfg = builder.Configuration
-    .AddJsonFile("appsettings.json", optional: true)
-    .AddJsonFile("appsettings.Development.json", optional: true)
-    .AddEnvironmentVariables()
-    .Build();
-
-// Blazor
+// --------------------------------------------
+// 1) MVC/Blazor
+// --------------------------------------------
 builder.Services.AddRazorPages();
 builder.Services.AddServerSideBlazor();
 
-// EF Core — use factory for Blazor Server safety
-builder.Services.AddDbContextFactory<ChatDbContext>(opt =>
-{
-    var cs = cfg["Persistence:ConnectionString"]
-             ?? "Host=localhost;Port=5432;Database=limbodancer_dev;Username=postgres;Password=postgres";
-    opt.UseNpgsql(cs);
-});
+// --------------------------------------------
+// 2) Tenant UI state (scoped, per-user connection)
+//    Exposed to components via CascadingParameter and to handlers/services via DI
+// --------------------------------------------
+builder.Services.AddScoped<TenantUiState>();
 
-// Azure AI Search clients
-builder.Services.AddSingleton<SearchIndexClient>(_ =>
-{
-    var endpoint = new Uri(cfg["Search:Endpoint"] ?? "https://example.search.windows.net");
-    var key = new AzureKeyCredential(cfg["Search:ApiKey"] ?? "replace-me");
-    return new SearchIndexClient(endpoint, key);
-});
-builder.Services.AddSingleton<SearchClient>(_ =>
-{
-    var endpoint = new Uri(cfg["Search:Endpoint"] ?? "https://example.search.windows.net");
-    var key = new AzureKeyCredential(cfg["Search:ApiKey"] ?? "replace-me");
-    var index = cfg["Search:Index"] ?? "ldm-memory";
-    return new SearchClient(endpoint, index, key);
-});
+// --------------------------------------------
+// 3) Ontology API options from config
+//    appsettings.json:
+//      "OntologyApi": {
+//        "BaseUrl": "http://localhost:5179",
+//        "TenantHeaderName": "X-Tenant-Id",
+//        "TimeoutSeconds": 10
+//      }
+// --------------------------------------------
+builder.Services.Configure<OntologyApiOptions>(builder.Configuration.GetSection("OntologyApi"));
 
-// Cosmos Gremlin
-builder.Services.AddCosmosGremlin(builder.Configuration, sectionName: "CosmosGremlin");
+// --------------------------------------------
+// 4) Delegating handler that appends tenant header
+//    - Adds header ONLY if not already present on the request
+//    - Reads header name from OntologyApiOptions
+//    - Reads current tenant from TenantUiState
+// --------------------------------------------
+builder.Services.AddTransient<TenantHeaderHandler>();
 
+// --------------------------------------------
+// 5) Named HttpClient for the MCP server ("OntologyApi")
+//    - BaseAddress & default Accept header
+//    - Timeout from options
+//    - TenantHeaderHandler to propagate tenant automatically
+// --------------------------------------------
+builder.Services.AddHttpClient(OntologyValidationService.HttpClientName, (sp, http) =>
+{
+    var opts = sp.GetRequiredService<IOptions<OntologyApiOptions>>().Value;
+    if (string.IsNullOrWhiteSpace(opts.BaseUrl))
+        throw new InvalidOperationException("Configuration 'OntologyApi:BaseUrl' is required.");
+
+    http.BaseAddress = new Uri(opts.BaseUrl!, UriKind.Absolute);
+    http.Timeout = TimeSpan.FromSeconds(Math.Clamp(opts.TimeoutSeconds, 2, 60));
+    http.DefaultRequestHeaders.Accept.Clear();
+    http.DefaultRequestHeaders.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
+})
+.AddHttpMessageHandler<TenantHeaderHandler>();
+
+// --------------------------------------------
+// 6) Ontology validation service
+//    (uses the named client above)
+// --------------------------------------------
+builder.Services.AddScoped<IOntologyValidationService, OntologyValidationService>();
+
+builder.Services.AddSingleton<IPropertyKeyMapper, DefaultPropertyKeyMapper>();
+
+// --------------------------------------------
+// 7) App pipeline
+// --------------------------------------------
 var app = builder.Build();
 
 if (!app.Environment.IsDevelopment())
 {
     app.UseExceptionHandler("/Error");
+    app.UseHsts();
 }
 
+app.UseHttpsRedirection();
 app.UseStaticFiles();
 app.UseRouting();
 
@@ -58,3 +86,50 @@ app.MapBlazorHub();
 app.MapFallbackToPage("/_Host");
 
 app.Run();
+
+
+// =======================================================================
+// Support types (same namespace as the app to avoid separate files)
+// =======================================================================
+
+namespace LimboDancer.MCP.BlazorConsole.Services
+{
+    /// <summary>
+    /// Minimal tenant UI state you can cascade into pages/components.
+    /// </summary>
+    public sealed class TenantUiState
+    {
+        public string? CurrentTenantId { get; set; }
+    }
+
+    /// <summary>
+    /// Delegating handler that ensures the tenant header is present on outgoing requests.
+    /// If the request already added the header explicitly, this handler leaves it alone.
+    /// </summary>
+    public sealed class TenantHeaderHandler : DelegatingHandler
+    {
+        private readonly TenantUiState _tenant;
+        private readonly IOptions<OntologyApiOptions> _options;
+
+        public TenantHeaderHandler(TenantUiState tenant, IOptions<OntologyApiOptions> options)
+        {
+            _tenant = tenant ?? throw new ArgumentNullException(nameof(tenant));
+            _options = options ?? throw new ArgumentNullException(nameof(options));
+        }
+
+        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+        {
+            var headerName = _options.Value.TenantHeaderName ?? "X-Tenant-Id";
+            var tenantId = _tenant.CurrentTenantId;
+
+            // Only add if a tenant is known AND header not already present.
+            if (!string.IsNullOrWhiteSpace(tenantId) &&
+                !request.Headers.Contains(headerName))
+            {
+                request.Headers.TryAddWithoutValidation(headerName, tenantId);
+            }
+
+            return base.SendAsync(request, cancellationToken);
+        }
+    }
+}

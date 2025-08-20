@@ -1,114 +1,187 @@
-using LimboDancer.MCP.Core;
-using LimboDancer.MCP.Core.Tenancy;
-using LimboDancer.MCP.McpServer.Storage;
-using LimboDancer.MCP.Storage;
-using ModelContextProtocol;
-using ModelContextProtocol.Protocol;
+﻿// UPDATED: now uses ToolSchemas.JsonLdContext for "@context" (no hard-coded context)
+
+using System;
+using System.Collections.Generic;
 using System.Text.Json;
-using System.Text.Json.Nodes;
+using System.Text.Json.Serialization;
+using System.Threading;
+using System.Threading.Tasks;
+using Microsoft.Extensions.Logging;
+using LimboDancer.MCP.McpServer.Graph;
 
-namespace LimboDancer.MCP.McpServer.Tools;
-
-public sealed class HistoryAppendTool : IMcpTool
+namespace LimboDancer.MCP.McpServer.Tools
 {
-    public string Name => "history.append";
-    public Tool ToolDescriptor { get; }
-
-    private readonly IHistoryService _history;
-    private readonly ITenantAccessor _tenant;
-
-    public HistoryAppendTool(IHistoryService history, ITenantAccessor tenant)
+    public interface IHistoryStore
     {
-        _history = history;
-        _tenant = tenant;
-
-        ToolDescriptor = new Tool
-        {
-            Name = Name,
-            Description = "Append a message (user/assistant/tool) to a session. Tenancy is enforced by server context.",
-            InputSchema = ToolSchema.Build(
-                (schema, props, req) =>
-                {
-                    // Bind to ontology URIs via @id
-                    ToolSchema.Prop(props, "sessionId", "string", "Session id (GUID)", "uuid", ontologyId: "ldm:Session");
-                    ToolSchema.Prop(props, "role", "string", "user | assistant | tool", ontologyId: "ldm:Message.role");
-                    ToolSchema.Prop(props, "content", "string", "Message text", ontologyId: "ldm:Message.content");
-                    ToolSchema.Prop(props, "toolCallsJson", "string", "JSON (optional)", ontologyId: "ldm:ToolCall");
-                    req.Add("sessionId"); req.Add("role"); req.Add("content");
-                },
-                customize: schema =>
-                {
-                    // Attach ontology preconditions/effects (using ontology predicates) as vendor extension
-                    var pre = new JsonArray
-                    {
-                        new JsonObject
-                        {
-                            // A simple existence check for the session (predicate omitted => existence)
-                            ["subject"] = "ldm:Session",
-                            ["predicate"] = "",
-                            ["equals"] = ""
-                        }
-                    };
-
-                    var eff = new JsonArray
-                    {
-                        new JsonObject
-                        {
-                            // Effect: session hasMessage -> message (predicate uses ontology relation)
-                            ["predicate"] = "ldm:hasMessage",
-                            ["value"] = "created" // hint; servers may ignore
-                        }
-                    };
-
-                    ToolSchema.AddOntologyExtensions(schema, preconditions: pre, effects: eff);
-                })
-        };
+        Task<HistoryAppendResult> AppendAsync(HistoryAppendRecord record, CancellationToken ct = default);
     }
 
-    public async Task<CallToolResult> CallAsync(Dictionary<string, object?> args, CancellationToken ct)
+    public sealed record HistoryAppendRecord(
+        string SessionId,
+        string Sender,
+        string Text,
+        DateTimeOffset Timestamp,
+        IDictionary<string, object?>? Metadata
+    );
+
+    public sealed record HistoryAppendResult(
+        string MessageId,
+        string SessionId,
+        DateTimeOffset Timestamp
+    );
+
+    public interface IGraphPreconditionsService
     {
-        if (!args.TryGetValue("sessionId", out var sidObj) || sidObj is null)
-            throw new McpException("Missing required argument 'sessionId'.");
-        if (!Guid.TryParse(sidObj.ToString(), out var sessionId))
-            throw new McpException("Invalid 'sessionId' (expected GUID).");
+        Task<PreconditionsResult> CheckAsync(CheckGraphPreconditionsRequest request, CancellationToken ct = default);
+    }
 
-        if (!args.TryGetValue("role", out var roleObj) || roleObj is null)
-            throw new McpException("Missing required argument 'role'.");
-        var roleStr = roleObj.ToString()!.Trim().ToLowerInvariant();
+    public sealed record CheckGraphPreconditionsRequest(
+        string SubjectVertexId,
+        IReadOnlyList<GraphPrecondition> Preconditions
+    );
 
-        MessageRole role = roleStr switch
+    public sealed record PreconditionsResult(
+        bool IsSatisfied,
+        IReadOnlyList<PreconditionViolation> Violations
+    );
+
+    public sealed record PreconditionViolation(
+        string Predicate,
+        string Reason
+    );
+
+    public sealed record GraphPrecondition(
+        string Predicate,
+        string Op,
+        object? Expected
+    );
+
+    public sealed class HistoryAppendInput
+    {
+        [JsonPropertyName("sessionId")] public string SessionId { get; set; } = default!;
+        [JsonPropertyName("sender")] public string Sender { get; set; } = default!;
+        [JsonPropertyName("text")] public string Text { get; set; } = default!;
+        [JsonPropertyName("timestamp")] public DateTimeOffset? Timestamp { get; set; }
+        [JsonPropertyName("metadata")] public Dictionary<string, object?>? Metadata { get; set; }
+        [JsonPropertyName("subjectVertexId")] public string SubjectVertexId { get; set; } = default!;
+        [JsonPropertyName("preconditions")] public List<GraphPrecondition>? Preconditions { get; set; }
+        [JsonPropertyName("effects")] public List<GraphEffect>? Effects { get; set; }
+    }
+
+    public sealed class HistoryAppendOutput
+    {
+        [JsonPropertyName("messageId")] public string MessageId { get; set; } = default!;
+        [JsonPropertyName("sessionId")] public string SessionId { get; set; } = default!;
+        [JsonPropertyName("timestamp")] public DateTimeOffset Timestamp { get; set; }
+        [JsonPropertyName("preconditionViolations")] public List<PreconditionViolation>? PreconditionViolations { get; set; }
+    }
+
+    public sealed class HistoryAppendTool
+    {
+        private readonly IHistoryStore _historyStore;
+        private readonly IGraphPreconditionsService _preconditions;
+        private readonly IGraphEffectsService _effects;
+        private readonly ILogger<HistoryAppendTool> _log;
+
+        public HistoryAppendTool(
+            IHistoryStore historyStore,
+            IGraphPreconditionsService preconditions,
+            IGraphEffectsService effects,
+            ILogger<HistoryAppendTool> log)
         {
-            "user" => MessageRole.User,
-            "assistant" => MessageRole.Assistant,
-            "tool" => MessageRole.Tool,
-            _ => throw new McpException("Invalid 'role' (expected: user|assistant|tool).")
-        };
-
-        if (!args.TryGetValue("content", out var contentObj) || contentObj is null)
-            throw new McpException("Missing required argument 'content'.");
-        var content = contentObj.ToString() ?? "";
-
-        JsonDocument? toolCalls = null;
-        if (args.TryGetValue("toolCallsJson", out var tcObj) && tcObj is not null && !string.IsNullOrWhiteSpace(tcObj.ToString()))
-        {
-            try { toolCalls = JsonDocument.Parse(tcObj!.ToString()!); }
-            catch { throw new McpException("Invalid 'toolCallsJson' (must be valid JSON)."); }
+            _historyStore = historyStore ?? throw new ArgumentNullException(nameof(historyStore));
+            _preconditions = preconditions ?? throw new ArgumentNullException(nameof(preconditions));
+            _effects = effects ?? throw new ArgumentNullException(nameof(effects));
+            _log = log ?? throw new ArgumentNullException(nameof(log));
         }
 
-        var msg = await _history.AppendMessageAsync(sessionId, role, content, toolCalls, ct);
+        public static string ToolSchema =>
+            // NOTE: Using shared @context so all tools stay in sync
+            "{\n" +
+            $"  \"@context\": {ToolSchemas.JsonLdContext},\n" +
+            "  \"@id\": \"ldm:tool/HistoryAppend\",\n" +
+            "  \"title\": \"Append message to session history and apply graph effects\",\n" +
+            "  \"description\": \"Appends a message; validates ontology preconditions; applies effects via mapped predicates.\",\n" +
+            "  \"input\": {\n" +
+            "    \"type\": \"object\",\n" +
+            "    \"required\": [\"sessionId\",\"sender\",\"text\",\"subjectVertexId\"],\n" +
+            "    \"properties\": {\n" +
+            "      \"sessionId\": { \"type\": \"string\" },\n" +
+            "      \"sender\": { \"type\": \"string\" },\n" +
+            "      \"text\": { \"type\": \"string\" },\n" +
+            "      \"timestamp\": { \"type\": \"string\", \"format\": \"date-time\" },\n" +
+            "      \"metadata\": { \"type\": \"object\", \"additionalProperties\": true },\n" +
+            "      \"subjectVertexId\": { \"type\": \"string\" },\n" +
+            "      \"preconditions\": { \"type\": \"array\" },\n" +
+            "      \"effects\": { \"type\": \"array\" }\n" +
+            "    }\n" +
+            "  },\n" +
+            "  \"output\": {\n" +
+            "    \"type\": \"object\",\n" +
+            "    \"required\": [\"messageId\",\"sessionId\",\"timestamp\"],\n" +
+            "    \"properties\": {\n" +
+            "      \"messageId\": { \"type\": \"string\" },\n" +
+            "      \"sessionId\": { \"type\": \"string\" },\n" +
+            "      \"timestamp\": { \"type\": \"string\", \"format\": \"date-time\" },\n" +
+            "      \"preconditionViolations\": { \"type\": \"array\" }\n" +
+            "    }\n" +
+            "  }\n" +
+            "}";
 
-        var payload = new
+        public async Task<HistoryAppendOutput> ExecuteAsync(HistoryAppendInput input, CancellationToken ct = default)
         {
-            tenantId = _tenant.TenantId,
-            id = msg.Id,
-            sessionId,
-            role = role.ToString().ToLowerInvariant(),
-            createdAt = msg.CreatedAt
-        };
+            ValidateBasicInput(input);
 
-        return new CallToolResult
+            var preconditions = input.Preconditions ?? new List<GraphPrecondition>();
+            if (preconditions.Count > 0)
+            {
+                var check = await _preconditions.CheckAsync(
+                    new CheckGraphPreconditionsRequest(input.SubjectVertexId, preconditions), ct);
+
+                if (!check.IsSatisfied)
+                {
+                    _log.LogInformation("Preconditions failed for Subject={Subject} on session={Session}.", input.SubjectVertexId, input.SessionId);
+                    return new HistoryAppendOutput
+                    {
+                        MessageId = string.Empty,
+                        SessionId = input.SessionId,
+                        Timestamp = DateTimeOffset.UtcNow,
+                        PreconditionViolations = new List<PreconditionViolation>(check.Violations)
+                    };
+                }
+            }
+
+            var ts = input.Timestamp ?? DateTimeOffset.UtcNow;
+            var appendResult = await _historyStore.AppendAsync(
+                new HistoryAppendRecord(input.SessionId, input.Sender, input.Text, ts, input.Metadata), ct);
+
+            var effects = input.Effects ?? new List<GraphEffect>();
+            if (effects.Count > 0)
+            {
+                await _effects.ApplyAsync(new ApplyGraphEffectsRequest(input.SubjectVertexId, effects), ct);
+            }
+
+            return new HistoryAppendOutput
+            {
+                MessageId = appendResult.MessageId,
+                SessionId = appendResult.SessionId,
+                Timestamp = appendResult.Timestamp
+            };
+        }
+
+        public Task<HistoryAppendOutput> ExecuteAsync(JsonElement json, CancellationToken ct = default)
         {
-            Content = [new TextContentBlock { Type = "text", Text = System.Text.Json.JsonSerializer.Serialize(payload) }]
-        };
+            var input = JsonSerializer.Deserialize<HistoryAppendInput>(json, new JsonSerializerOptions { PropertyNameCaseInsensitive = true })
+                        ?? throw new ArgumentException("Invalid HistoryAppend input payload.");
+            return ExecuteAsync(input, ct);
+        }
+
+        private static void ValidateBasicInput(HistoryAppendInput input)
+        {
+            if (string.IsNullOrWhiteSpace(input.SessionId)) throw new ArgumentException("sessionId is required.");
+            if (string.IsNullOrWhiteSpace(input.Sender)) throw new ArgumentException("sender is required.");
+            if (string.IsNullOrWhiteSpace(input.Text)) throw new ArgumentException("text is required.");
+            if (string.IsNullOrWhiteSpace(input.SubjectVertexId)) throw new ArgumentException("subjectVertexId is required.");
+        }
     }
 }

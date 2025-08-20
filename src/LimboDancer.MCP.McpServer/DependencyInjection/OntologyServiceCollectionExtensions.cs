@@ -1,9 +1,7 @@
 using LimboDancer.MCP.Ontology.Export;
-using LimboDancer.MCP.Ontology.JsonLd;
 using LimboDancer.MCP.Ontology.Repositories;
 using LimboDancer.MCP.Ontology.Repositories.Cosmos;
 using LimboDancer.MCP.Ontology.Store;
-using LimboDancer.MCP.Ontology.Validation;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 
@@ -25,14 +23,13 @@ internal static class OntologyServiceCollectionExtensions
         // In-memory read store built over the repository
         services.AddScoped<OntologyStore>();
 
-        // Validation and governance
-        services.AddSingleton<OntologyValidators>();
-        services.AddSingleton<PublishGates>();
-
-        // Context + export
-        services.AddScoped<JsonLdContextBuilder>();
+        // Export services
         services.AddScoped<JsonLdExportService>();
         services.AddScoped<RdfExportService>();
+
+        // Notes:
+        // - OntologyValidators and PublishGates are static utility classes; they are not registered in DI.
+        // - JsonLdContextBuilder is also static and used internally by JsonLdExportService.
 
         return services;
     }
