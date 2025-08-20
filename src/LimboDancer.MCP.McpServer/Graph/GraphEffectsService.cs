@@ -32,12 +32,6 @@ namespace LimboDancer.MCP.McpServer.Graph
         string? CurrentTenantId { get; }
     }
 
-    public interface IGraphStore
-    {
-        Task UpsertVertexPropertyAsync(string vertexId, string propertyKey, object? value, string? tenantId, CancellationToken ct);
-        Task UpsertEdgeAsync(string sourceVertexId, string targetVertexId, string edgeLabel, IDictionary<string, object?>? edgeProperties, string? tenantId, CancellationToken ct);
-    }
-
     public sealed class GraphEffectsService : IGraphEffectsService
     {
         private readonly IGraphStore _graph;
