@@ -51,6 +51,11 @@ From [`LimboDancer.MCP Roadmap.md`](./LimboDancer.MCP%20Roadmap.md):
 
 * **Milestone 5 — Planner + Preconditions/Effects:**
   Ontology terms govern preconditions (checked in KG) and effects (committed to KG + history).
+  
+  #### Note: 
+  The planner first resolves the active **OntologyStore** using `{tenant,package,channel}` and then evaluates preconditions/effects strictly within that scope. Tool invocations inherit the same scope; any cross‑tenant or cross‑channel reference is refused with a typed `scope_mismatch` error.
+
+---
 
 * **Milestone 6 — Knowledge Graph Integration:**
   Cosmos DB Gremlin stores ontology instances, enabling neighborhood expansion and typed queries.
@@ -139,5 +144,7 @@ By tying **Roadmap milestones** and **Design Map architecture** directly to onto
 * Operators can **observe and validate ontology entities** in real time.
 
 ---
+
+
 
 Would you like me to also prepare a **dedicated `Ontology.md` reference file** (separate from this conceptual doc) that catalogs all ontology terms (classes, properties, constraints) as they are introduced in Milestone 4 onward? That could serve as both a **developer glossary** and a **living contract** for the system.

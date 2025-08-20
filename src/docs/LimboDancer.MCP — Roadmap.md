@@ -98,7 +98,20 @@ Here’s a **rewritten PR-ready `LimboDancer.MCP Roadmap.md`** with all the new 
 
 ---
 
-### **Milestone 10 — Observability & Governance**
+### **Milestone 10 — Multi-tenant hardening (acceptance):**
+
+* ✅ Ontology HPK in Cosmos (`/tenant,/package,/channel`)
+* ✅ Schema/context loaders accept scope and cache per HPK
+* ☐ AI Search index includes `tenant` (± `package`,`channel`); queries enforce `tenant`
+* ☐ Gremlin upserts and traversals tenant‑guarded (ID prefix or `.has('tenant')`)
+* ☐ MCP tool schemas/handlers include and enforce scope
+* ☐ Operator Console has tenant selector; all pages pass scope
+* ☐ CLI verbs accept `--tenant [--package --channel]`
+* ☐ Isolation tests verify no cross‑tenant leakage
+
+---
+
+### **Milestone 11 — Observability & Governance**
 
 * Full OTEL traces/metrics/logs into App Insights.
 * Governance rules (ontology constraints, SHACL-like validators).
@@ -107,7 +120,7 @@ Here’s a **rewritten PR-ready `LimboDancer.MCP Roadmap.md`** with all the new 
 
 ---
 
-### **Milestone 11 — Packaging & 1.0 Release**
+### **Milestone 12 — Packaging & 1.0 Release**
 
 * Containers published for MCP + Blazor console.
 * GitHub Actions CI/CD: build, test, publish, deploy to ACA.

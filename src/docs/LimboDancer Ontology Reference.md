@@ -2,6 +2,8 @@
 
 Here’s a **starter `Ontology.md` reference file** you can drop into your `/docs` folder. It’s structured as a **living contract**: a glossary of ontology terms (classes, properties, constraints) that will evolve with the project and directly align with **Milestone 4 (Ontology v1)** in the Roadmap.
 
+This reference is **per-tenant**. Each ontology is published under a distinct `{tenant,package,channel}` in the authoritative store. Examples and CURIEs (`ldm:*`) resolve in the context of the active tenant; do not assume cross-tenant compatibility unless explicitly stated.
+
 ---
 
 

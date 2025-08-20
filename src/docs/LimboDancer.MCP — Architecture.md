@@ -91,13 +91,15 @@ flowchart LR
 
 ### 3.1 limbodancer-mcp (headless runtime)
 
-* MCP host: stdio and HTTP transports, JSON RPC tool dispatcher.
-* Planner: typed ReAct loop; resolves tool chains by ontology capabilities.
-* Preconditions: validates via KG queries.
-* Effects: commits state changes to KG and history.
-* Retrieval: hybrid AI Search top K plus KG neighborhood expansion with rerank.
-* Background jobs: ingestion, reindexing, compaction, event consumers.
-* Observability: OpenTelemetry traces, metrics, logs to Application Insights.
+The runtime executes MCP tools over stdio and HTTP. All requests carry an explicit **ontology scope** `{ tenant, package, channel }`. The planner, precondition checks, retrieval, and effect commits must propagate this scope end‑to‑end:
+
+* **Planner & tools:** every step includes `{tenant,package,channel}` when invoking tools.
+* **Retrieval:** AI Search queries filter on `tenant` (and optionally `package`,`channel`).
+* **Knowledge Graph:** all traversals and upserts are scoped to the same tenant (partition or property guard).
+* **History:** session and message reads/writes are scoped by tenant (service‑level guard; column optional).
+* **Observability:** logs/traces tag the scope for isolation and triage.
+
+---
 
 ### 3.2 limbodancer-console (Blazor Server UI)
 
@@ -218,28 +220,31 @@ MCP runtime and Blazor Server UI are separate containers. MCP is stateless. UI u
 
 ---
 
-## 8) Azure services mapping
+## **8) Azure services mapping (tenant isolation notes)**
 
-| Concern             | Azure choice                  | Notes                                    |
-| ------------------- | ----------------------------- | ---------------------------------------- |
-| Chat and embeddings | Azure OpenAI                  | via Microsoft.Extensions.AI              |
-| Vector retrieval    | Azure AI Search               | hybrid dense and BM25, filterable fields |
-| Knowledge graph     | Cosmos DB Gremlin API         | property graph, fast neighborhoods       |
-| History             | Azure Database for PostgreSQL | EF Core migrations, jsonb metadata       |
-| Events              | Service Bus                   | topics and subscriptions, KEDA autoscale |
-| Ingestion triggers  | Event Grid                    | blob create or update                    |
-| Artifacts           | Blob Storage                  | raw docs, summaries, audit bundles       |
-| Observability       | Application Insights OTEL     | traces, metrics, logs                    |
-| Hosting             | Azure Container Apps          | MCP and UI scale independently           |
+| Concern           | Azure choice            | Notes                                                                                            |
+| ----------------- | ----------------------- | ------------------------------------------------------------------------------------------------ |
+| Chat & embeddings | Azure OpenAI            | Scope is metadata only; no tenant state is stored here.                                          |
+| Vector retrieval  | Azure AI Search         | Add fields: `tenant` (required), `package`, `channel` (filterable). All queries filter `tenant`. |
+| Knowledge graph   | Cosmos DB (Gremlin API) | Either tenant‑prefixed vertex IDs or a `tenant` property plus mandatory `.has('tenant', …)`.     |
+| History           | Azure PostgreSQL        | Service‑level filter by tenant; add `TenantId` column when stronger isolation is needed.         |
+| Events            | Service Bus             | Topic/subscription names include tenant or carry it in message properties.                       |
+| Ontology store    | Cosmos DB (Core SQL)    | Authoritative HPK: `/tenant` → `/package` → `/channel`; no cross‑tenant queries.                 |
 
 ---
 
-## 9) Security and tenancy
+## **9) Security and tenancy**
+Tenancy is a first‑class routing dimension throughout the system.
 
-* Identity: Entra ID and managed identity for resource access.
-* Secrets: Key Vault, configuration via App Configuration.
-* Network: private endpoints when available; egress via NAT gateway.
-* Authorization: role checks on admin APIs; future tenant isolation via tenant id columns and KG partition keys.
+* **AuthZ:** User/app tokens resolve an active `{tenant,package,channel}`; HTTP requests without a resolvable tenant are rejected.
+* **Routing:** All tool calls, storage requests, and graph/search operations must include the same scope.
+* **Data plane isolation:**
+
+  * **Ontology:** strictly per HPK `(tenant,package,channel)`; no cross‑tenant reads/writes.
+  * **Vector:** every document stamped with `tenant`; queries require `tenant` filter.
+  * **Graph:** enforce tenant either by vertex ID prefix or property guard in all traversals.
+  * **History:** reads/writes are tenant‑scoped; `TenantId` column recommended for long‑term multi‑tenant ops.
+* **Ops:** Observability data (logs/traces/metrics) include `tenant` labels. Backups/exports run per tenant.
 
 ---
 
@@ -292,10 +297,8 @@ sequenceDiagram
 
 ---
 
-## 14) Versioning and compatibility
-
-* Track MCP spec date in code, for example 2025 06 18; run compatibility tests in CI.
-* Ontology semver: breaking changes require migration scripts for KG and tool contexts.
+## **14) Versioning and compatibility**
+Ontology **channels** (e.g., `current`, `v1.4.0`) are **per tenant**. Clients that require reproducibility must pin `{tenant,package,channel}` in requests and persisted artifacts. Server‑side defaults may resolve to `channel=current` but should never elide `tenant` in production paths.
 
 ---
 
