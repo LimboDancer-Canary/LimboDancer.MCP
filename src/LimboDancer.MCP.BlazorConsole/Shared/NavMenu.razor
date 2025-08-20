@@ -1,7 +1,14 @@
 ﻿<nav>
     <h3 class="brand">LimboDancer</h3>
+    <div style="font-size:12px; color: var(--muted); margin-bottom:8px;">
+        Tenant: @(TenantState?.TenantLabel ?? "(none)")
+    </div>
     <Shared.NavLinkItem Href="/" Text="Home" />
     <Shared.NavLinkItem Href="/sessions" Text="Sessions" />
     <Shared.NavLinkItem Href="/memory" Text="Memory" />
     <Shared.NavLinkItem Href="/graph" Text="Graph" />
 </nav>
+
+@code {
+    [CascadingParameter] public LimboDancer.MCP.BlazorConsole.Services.TenantUiState? TenantState { get; set; }
+}

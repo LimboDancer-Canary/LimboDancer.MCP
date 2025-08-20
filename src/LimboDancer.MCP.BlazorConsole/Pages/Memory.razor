@@ -3,56 +3,65 @@
 
 <h3>Vector Memory (Azure AI Search)</h3>
 
-<div class="searchpanel">
-    <input class="text" @bind="query" placeholder="Query text…" />
-    <input class="text" @bind="tag" placeholder="Filter tag (equals) e.g. kind:vector" />
-    <input class="text" @bind="externalId" placeholder="Filter ExternalId (equals)" />
-    <button class="btn" @onclick="DoSearchAsync">Search</button>
-</div>
-
-@if (busy)
+@if (!TenantState.HasTenant)
 {
-    <p>Searching…</p>
-}
-else if (results is null)
-{
-    <p>Enter a query to search.</p>
+    <p style="color: var(--muted);">Select a tenant to search memory.</p>
 }
 else
 {
-    <table class="grid-table">
-        <thead>
-            <tr>
-                <th>Score</th>
-                <th>Id</th>
-                <th>ExternalId</th>
-                <th>Tags</th>
-                <th>Preview</th>
-            </tr>
-        </thead>
-        <tbody>
-            @if (results.Count == 0)
-            {
-                <tr><td colspan="5">No results.</td></tr>
-            }
-            else
-            {
-                @foreach (var r in results)
+    <div class="searchpanel">
+        <input class="text" @bind="query" placeholder="Query text…" />
+        <input class="text" @bind="tag" placeholder="Filter tag (equals) e.g. kind:vector" />
+        <input class="text" @bind="externalId" placeholder="Filter ExternalId (equals)" />
+        <button class="btn" @onclick="DoSearchAsync">Search</button>
+    </div>
+
+    @if (busy)
+    {
+        <p>Searching…</p>
+    }
+    else if (results is null)
+    {
+        <p>Enter a query to search.</p>
+    }
+    else
+    {
+        <table class="grid-table">
+            <thead>
+                <tr>
+                    <th>Score</th>
+                    <th>Id</th>
+                    <th>ExternalId</th>
+                    <th>Tags</th>
+                    <th>Preview</th>
+                </tr>
+            </thead>
+            <tbody>
+                @if (results.Count == 0)
                 {
-                    <tr>
-                        <td>@r.Score.ToString("F3")</td>
-                        <td>@r.Doc.Id</td>
-                        <td>@r.Doc.ExternalId</td>
-                        <td>@(r.Doc.Tags is null ? "" : string.Join(", ", r.Doc.Tags))</td>
-                        <td>@(r.Doc.Content?.Length > 180 ? r.Doc.Content[..180] + "…" : r.Doc.Content)</td>
-                    </tr>
+                    <tr><td colspan="5">No results.</td></tr>
                 }
-            }
-        </tbody>
-    </table>
+                else
+                {
+                    @foreach (var r in results)
+                    {
+                        <tr>
+                            <td>@r.Score.ToString("F3")</td>
+                            <td>@r.Doc.Id</td>
+                            <td>@r.Doc.ExternalId</td>
+                            <td>@(r.Doc.Tags is null ? "" : string.Join(", ", r.Doc.Tags))</td>
+                            <td>@(r.Doc.Content?.Length > 180 ? r.Doc.Content[..180] + "…" : r.Doc.Content)</td>
+                        </tr>
+                    }
+                }
+            </tbody>
+        </table>
+    }
 }
 
 @code {
+    [CascadingParameter] public LimboDancer.MCP.BlazorConsole.Services.TenantUiState TenantState { get; set; } = default!;
+
     private string? query;
     private string? tag;
     private string? externalId;
@@ -61,6 +70,7 @@ else
 
     private async Task DoSearchAsync()
     {
+        if (!TenantState.HasTenant) return;
         busy = true;
         results = new List<(MemoryDoc, double)>();
 
@@ -72,6 +82,11 @@ else
         options.SearchFields.AddRange(new[] { "content", "tags", "externalId" });
 
         var filters = new List<string>();
+
+        // Strict tenant filter
+        var tenantFilter = $"tenantId eq '{TenantState.TenantId!.Value}'";
+        filters.Add(tenantFilter);
+
         if (!string.IsNullOrWhiteSpace(tag))
             filters.Add($"tags/any(t: t eq '{Escape(tag)}')");
         if (!string.IsNullOrWhiteSpace(externalId))

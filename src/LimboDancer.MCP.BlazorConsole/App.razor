@@ -1,12 +1,30 @@
-﻿<Router AppAssembly="@typeof(App).Assembly">
-    <Found Context="routeData">
-        <LayoutView Layout="@typeof(Shared.MainLayout)" RouteData="@routeData" />
-    </Found>
-    <NotFound>
-        <LayoutView Layout="@typeof(Shared.MainLayout)">
-            <p class="m-4">Sorry, there's nothing at this address.</p>
-        </LayoutView>
-    </NotFound>
-</Router>
+﻿﻿@using Microsoft.AspNetCore.Hosting
+@inject IConfiguration Config
+@inject IWebHostEnvironment Env
 
-@code { }
+<CascadingValue Value="tenantState" IsFixed="false">
+    <Router AppAssembly="@typeof(App).Assembly">
+        <Found Context="routeData">
+            <LayoutView Layout="@typeof(Shared.MainLayout)" RouteData="@routeData" />
+        </Found>
+        <NotFound>
+            <LayoutView Layout="@typeof(Shared.MainLayout)">
+                <p class="m-4">Sorry, there's nothing at this address.</p>
+            </LayoutView>
+        </NotFound>
+    </Router>
+</CascadingValue>
+
+@code {
+    private TenantUiState tenantState = new();
+
+    protected override void OnInitialized()
+    {
+        // Dev-only default tenant from configuration
+        var defaultTenant = Config["Tenant"];
+        if (Env.IsDevelopment() && Guid.TryParse(defaultTenant, out var tid))
+        {
+            tenantState.SetTenant(tid);
+        }
+    }
+}

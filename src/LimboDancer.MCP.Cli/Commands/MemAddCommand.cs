@@ -6,7 +6,8 @@ using System.CommandLine;
 using System.Security.Cryptography;
 using System.Text;
 using static LimboDancer.MCP.Vector.AzureSearch.VectorStore;
-using static Microsoft.EntityFrameworkCore.DbLoggerCategory.Database;
+using Microsoft.Extensions.Hosting;
+using LimboDancer.MCP.Core.Tenancy;
 
 namespace LimboDancer.MCP.Cli.Commands;
 
@@ -25,13 +26,19 @@ internal static class MemAddCommand
         var tagsCsv = new Option<string?>("--tags", () => "kind:vector,source:cli", "CSV tags");
         var maxChars = new Option<int>("--max-chars", () => 1200, "Chunk size (characters)");
         var dim = new Option<int>("--dim", () => 1536, "Embedding dimensions (for random embedding)");
+        var tenant = new Option<string?>("--tenant", "Tenant Id (GUID). Defaults in Development from config.");
+        var package = new Option<string?>("--package", "Optional package identifier.");
+        var channel = new Option<string?>("--channel", "Optional channel identifier.");
 
         add.AddOption(file); add.AddOption(text); add.AddOption(title); add.AddOption(source);
         add.AddOption(klass); add.AddOption(tagsCsv); add.AddOption(maxChars); add.AddOption(dim);
+        add.AddOption(tenant); add.AddOption(package); add.AddOption(channel);
 
-        add.SetHandler(async (string? file, string? text, string? title, string? source, string? klass, string? tagsCsv, int maxChars, int dim) =>
+        add.SetHandler(async (string? file, string? text, string? title, string? source, string? klass, string? tagsCsv, int maxChars, int dim, string? tenantOpt, string? _pkg, string? _chan) =>
         {
             using var host = Bootstrap.BuildHost();
+            ApplyTenant(host, tenantOpt);
+
             var cfg = host.Services.GetRequiredService<IConfiguration>();
             var client = host.Services.GetRequiredService<SearchClient>();
 
@@ -80,57 +87,40 @@ internal static class MemAddCommand
             }
 
             await store.UpsertAsync(docs, embedIfMissing: true);
-            Console.WriteLine("Upsert complete.");
-        }, file, text, title, source, klass, tagsCsv, maxChars, dim);
+            Console.WriteLine($"Upserted {docs.Count} chunks.");
+        }, file, text, title, source, klass, tagsCsv, maxChars, dim, tenant, package, channel);
 
         cmd.AddCommand(add);
         return cmd;
     }
 
+    private static void ApplyTenant(IHost host, string? tenantOpt)
+    {
+        var env = host.Services.GetRequiredService<IHostEnvironment>();
+        var cfg = host.Services.GetRequiredService<IConfiguration>();
+        var accessor = host.Services.GetRequiredService<ITenantAccessor>();
+
+        if (!string.IsNullOrWhiteSpace(tenantOpt) && Guid.TryParse(tenantOpt, out var tidFromOpt))
+        {
+            accessor.TenantId = tidFromOpt;
+            return;
+        }
+
+        if (env.IsDevelopment())
+        {
+            var cfgTenant = cfg["Tenant"];
+            if (Guid.TryParse(cfgTenant, out var tidFromCfg))
+            {
+                accessor.TenantId = tidFromCfg;
+            }
+        }
+    }
+
     private static int SeedFrom(string s)
     {
-        using var md5 = MD5.Create();
-        var hash = md5.ComputeHash(Encoding.UTF8.GetBytes(s));
-        return Math.Abs(BitConverter.ToInt32(hash, 0));
-    }
-
-    private static List<string> ChunkBySentences(string text, int maxChars)
-    {
-        var parts = SplitSentences(text);
-        var chunks = new List<string>();
-        var sb = new StringBuilder(maxChars + 64);
-
-        foreach (var s in parts)
-        {
-            if (sb.Length + s.Length + 1 > maxChars && sb.Length > 0)
-            {
-                chunks.Add(sb.ToString().Trim());
-                sb.Clear();
-            }
-            sb.AppendLine(s);
-        }
-        if (sb.Length > 0) chunks.Add(sb.ToString().Trim());
-        return chunks;
-    }
-
-    private static IEnumerable<string> SplitSentences(string text)
-    {
-        foreach (var para in text.Split(new[] { "\r\n\r\n", "\n\n" }, StringSplitOptions.RemoveEmptyEntries))
-        {
-            var p = para.Replace("\r\n", " ").Replace('\n', ' ').Trim();
-            if (p.Length == 0) continue;
-
-            var acc = new StringBuilder();
-            foreach (var token in p.Split(' ', StringSplitOptions.RemoveEmptyEntries))
-            {
-                acc.Append(token).Append(' ');
-                if (token.EndsWith('.') || token.EndsWith('!') || token.EndsWith('?'))
-                {
-                    yield return acc.ToString().Trim();
-                    acc.Clear();
-                }
-            }
-            if (acc.Length > 0) yield return acc.ToString().Trim();
-        }
+        using var sha = SHA256.Create();
+        var bytes = sha.ComputeHash(Encoding.UTF8.GetBytes(s));
+        // Convert first 4 bytes into an int
+        return BitConverter.ToInt32(bytes, 0);
     }
 }

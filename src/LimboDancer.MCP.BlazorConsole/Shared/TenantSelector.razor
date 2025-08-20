@@ -1,0 +1,41 @@
+﻿@using System.ComponentModel.DataAnnotations
+
+<CascadingParameter] private TenantUiState TenantState { get; set; } = default!;
+
+<div style="margin-bottom: 12px;">
+    <div style="margin-bottom:6px; font-size:12px; color: var(--muted);">Current tenant: <strong>@TenantState.TenantLabel</strong></div>
+    <div style="display:flex; gap:8px; align-items:center;">
+        <input class="text" placeholder="Tenant GUID"
+               @bind="tenantText" />
+        <button class="btn small" @onclick="Apply" disabled="@(!CanApply)">Apply</button>
+        <button class="btn small" @onclick="Clear">Clear</button>
+    </div>
+    @if (!string.IsNullOrEmpty(validationError))
+    {
+        <div style="color:#ff8080; font-size:12px; margin-top:6px;">@validationError</div>
+    }
+</div>
+
+@code {
+    private string? tenantText;
+    private string? validationError;
+
+    private bool CanApply => Guid.TryParse(tenantText, out _);
+
+    private void Apply()
+    {
+        validationError = null;
+        if (!Guid.TryParse(tenantText, out var tid))
+        {
+            validationError = "Enter a valid GUID.";
+            return;
+        }
+        TenantState.SetTenant(tid);
+    }
+
+    private void Clear()
+    {
+        tenantText = null;
+        TenantState.Clear();
+    }
+}

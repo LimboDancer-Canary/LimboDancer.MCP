@@ -13,6 +13,9 @@ public sealed class SearchIndexBuilder
     public const string ExternalIdFieldName = "externalId";
     public const string KeyFieldName = "id";
 
+    // Also used by MemoryDoc's JsonPropertyName on TenantId
+    public const string TenantFieldName = "tenantId";
+
     // Names for vector configuration
     private const string HnswAlgoName = "hnsw-default";
     private const string VectorProfileName = "vector-profile";
@@ -31,26 +34,41 @@ public sealed class SearchIndexBuilder
     {
         var fields = new List<SearchField>
         {
-            new SimpleField("tenantId", SearchFieldDataType.String) { IsFilterable = true, IsFacetable = true },
+            // Required key field
+            new SimpleField(KeyFieldName, SearchFieldDataType.String)
+            {
+                IsKey = true,
+                IsFilterable = true
+            },
+
+            // Tenant scoping field: filterable/facetable
+            new SimpleField(TenantFieldName, SearchFieldDataType.String)
+            {
+                IsFilterable = true,
+                IsFacetable = true
+            },
+
+            // Content fields
             new SearchField(ContentFieldName, SearchFieldDataType.String) { IsSearchable = true },
-            new SearchField(TagsFieldName, SearchFieldDataType.Collection(SearchFieldDataType.String)) { IsFilterable = true, IsFacetable = true },
+            new SearchField(TagsFieldName, SearchFieldDataType.Collection(SearchFieldDataType.String))
+            {
+                IsFilterable = true,
+                IsFacetable = true
+            },
             new SearchField(ExternalIdFieldName, SearchFieldDataType.String) { IsFilterable = true }
         };
 
         // Vector field: Collection(Single), with profile & dimensions
         fields.Add(new SearchField(VectorFieldName, SearchFieldDataType.Collection(SearchFieldDataType.Single))
         {
-            // Vector-specific settings (GA API)
             VectorSearchDimensions = vectorDimensions,
-            VectorSearchProfileName = VectorProfileName,
-            // vectors are not searchable text; do not mark IsSearchable
-            // IsStored defaults true for vectors (retrievable); leave as default
+            VectorSearchProfileName = VectorProfileName
         });
 
         var index = new SearchIndex(indexName)
         {
             Fields = fields,
-            Similarity = new BM25Similarity(), // BM25 for keyword portion
+            Similarity = new BM25Similarity(),
             VectorSearch = new VectorSearch
             {
                 Algorithms =
@@ -59,7 +77,6 @@ public sealed class SearchIndexBuilder
                     {
                         Parameters = new HnswParameters
                         {
-                            // Sensible defaults; tune later as needed
                             M = 16,
                             EfConstruction = 400,
                             EfSearch = 100

@@ -10,6 +10,8 @@ public sealed class MemoryDoc
     [JsonPropertyName("id")]
     public string Id { get; set; } = default!;
 
+    // Ensure the outgoing JSON uses "tenantId" to match the index field name
+    [JsonPropertyName("tenantId")]
     public Guid TenantId { get; set; }
 
     [JsonPropertyName("content")]

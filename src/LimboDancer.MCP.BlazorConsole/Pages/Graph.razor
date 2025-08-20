@@ -3,79 +3,88 @@
 
 <h3>Graph (Cosmos Gremlin)</h3>
 
-<div class="searchpanel">
-    <input class="text" @bind="label" placeholder="Vertex label (e.g., ldm:Session)" />
-    <button class="btn" @onclick="LoadVerticesAsync">Load Vertices</button>
-</div>
-
-@if (loading)
+@if (!TenantState.HasTenant)
 {
-    <p>Loading…</p>
+    <p style="color: var(--muted);">Select a tenant to browse the graph.</p>
 }
 else
 {
-    <div class="grid">
-        <div class="col">
-            <h4>Vertices (label=@label)</h4>
-            <table class="grid-table">
-                <thead>
-                    <tr>
-                        <th>Id</th>
-                        <th>Label</th>
-                        <th></th>
-                    </tr>
-                </thead>
-                <tbody>
-                    @if (vertices.Count == 0)
-                    {
-                        <tr><td colspan="3">No vertices.</td></tr>
-                    }
-                    else
-                    {
-                        @foreach (var v in vertices)
-                        {
-                            <tr>
-                                <td>@v.Id</td>
-                                <td>@v.Label</td>
-                                <td><button class="btn small" @onclick="() => LoadOutEdgesAsync(v.Id)">Out-Edges</button></td>
-                            </tr>
-                        }
-                    }
-                </tbody>
-            </table>
-        </div>
-
-        <div class="col">
-            <h4>Out-Edges (@selectedVertexId)</h4>
-            <table class="grid-table">
-                <thead>
-                    <tr>
-                        <th>Edge Label</th>
-                        <th>InV Id</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    @if (edges.Count == 0)
-                    {
-                        <tr><td colspan="2">Select a vertex.</td></tr>
-                    }
-                    else
-                    {
-                        @foreach (var e in edges)
-                        {
-                            <tr>
-                                <td>@e.EdgeLabel</td>
-                                <td>@e.InVId</td>
-                            </tr>
-                        }
-                    }
-                </tbody>
-            </table>
-        </div>
+    <div class="searchpanel">
+        <input class="text" @bind="label" placeholder="Vertex label (e.g., ldm:Session)" />
+        <button class="btn" @onclick="LoadVerticesAsync">Load Vertices</button>
     </div>
+
+    @if (loading)
+    {
+        <p>Loading…</p>
+    }
+    else
+    {
+        <div class="grid">
+            <div class="col">
+                <h4>Vertices (label=@label)</h4>
+                <table class="grid-table">
+                    <thead>
+                        <tr>
+                            <th>Id</th>
+                            <th>Label</th>
+                            <th></th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @if (vertices.Count == 0)
+                        {
+                            <tr><td colspan="3">No vertices.</td></tr>
+                        }
+                        else
+                        {
+                            @foreach (var v in vertices)
+                            {
+                                <tr>
+                                    <td>@v.Id</td>
+                                    <td>@v.Label</td>
+                                    <td><button class="btn small" @onclick="() => LoadOutEdgesAsync(v.Id)">Out-Edges</button></td>
+                                </tr>
+                            }
+                        }
+                    </tbody>
+                </table>
+            </div>
+
+            <div class="col">
+                <h4>Out-Edges (@selectedVertexId)</h4>
+                <table class="grid-table">
+                    <thead>
+                        <tr>
+                            <th>Edge Label</th>
+                            <th>InV Id</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @if (edges.Count == 0)
+                        {
+                            <tr><td colspan="2">Select a vertex.</td></tr>
+                        }
+                        else
+                        {
+                            @foreach (var e in edges)
+                            {
+                                <tr>
+                                    <td>@e.EdgeLabel</td>
+                                    <td>@e.InVId</td>
+                                </tr>
+                            }
+                        }
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    }
 }
 
 @code {
+    [CascadingParameter] public LimboDancer.MCP.BlazorConsole.Services.TenantUiState TenantState { get; set; } = default!;
+
     private string? label;
     private bool loading;
     private string? selectedVertexId;
@@ -86,16 +95,34 @@ else
     private record VertexRow(string Id, string Label);
     private record EdgeRow(string EdgeLabel, string InVId);
 
+    protected override void OnInitialized()
+    {
+        TenantState.Changed += () =>
+        {
+            vertices.Clear();
+            edges.Clear();
+            selectedVertexId = null;
+            StateHasChanged();
+        };
+    }
+
     private async Task LoadVerticesAsync()
     {
+        if (!TenantState.HasTenant) return;
+
         loading = true;
         vertices.Clear();
         edges.Clear();
         selectedVertexId = null;
 
         using var client = GremlinFactory.Create();
-        var gremlin = "g.V().hasLabel(lbl).limit(100).project('id','label').by(id()).by(label())";
-        var bindings = new Dictionary<string, object?> { ["lbl"] = label ?? "" };
+        // Tenant-scoped vertex query
+        var gremlin = "g.V().has('tenantId', tid).hasLabel(lbl).limit(100).project('id','label').by(id()).by(label())";
+        var bindings = new Dictionary<string, object?>
+        {
+            ["lbl"] = label ?? "",
+            ["tid"] = TenantState.TenantId!.Value.ToString()
+        };
         var rs = await client.SubmitAsync<dynamic>(gremlin, bindings);
 
         foreach (var row in rs)
@@ -112,12 +139,19 @@ else
 
     private async Task LoadOutEdgesAsync(string id)
     {
+        if (!TenantState.HasTenant) return;
+
         selectedVertexId = id;
         edges.Clear();
         using var client = GremlinFactory.Create();
 
-        var gremlin = "g.V(vid).outE().limit(50).project('edgeLabel','inV').by(label()).by(inV().id())";
-        var bindings = new Dictionary<string, object?> { ["vid"] = id };
+        // Tenant-scoped edge traversal starting from tenant-scoped vertex
+        var gremlin = "g.V(vid).has('tenantId', tid).outE().limit(50).project('edgeLabel','inV').by(label()).by(inV().id())";
+        var bindings = new Dictionary<string, object?>
+        {
+            ["vid"] = id,
+            ["tid"] = TenantState.TenantId!.Value.ToString()
+        };
         var rs = await client.SubmitAsync<dynamic>(gremlin, bindings);
 
         foreach (var row in rs)

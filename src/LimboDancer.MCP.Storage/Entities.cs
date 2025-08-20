@@ -37,3 +37,42 @@ public sealed class MemoryItem
     public JsonDocument? MetaJson { get; set; }
     public DateTime CreatedAt { get; set; }
 }
+
+
+// Tenant-scoped chat entities
+
+public sealed class ChatThread
+{
+    public Guid Id { get; set; } = Guid.NewGuid();
+
+    // Required tenant scope for all entities
+    public string TenantId { get; set; } = default!;
+
+    public string? Title { get; set; }
+
+    public DateTimeOffset CreatedAtUtc { get; set; } = DateTimeOffset.UtcNow;
+    public DateTimeOffset UpdatedAtUtc { get; set; } = DateTimeOffset.UtcNow;
+
+    // Navigation
+    public ICollection<ChatMessage> Messages { get; set; } = new List<ChatMessage>();
+}
+
+public sealed class ChatMessage
+{
+    public Guid Id { get; set; } = Guid.NewGuid();
+
+    // Required tenant scope for all entities
+    public string TenantId { get; set; } = default!;
+
+    public Guid ThreadId { get; set; }
+
+    // Simple string for role ("user", "assistant", etc.) to avoid coupling here
+    public string Role { get; set; } = "user";
+
+    public string Content { get; set; } = string.Empty;
+
+    public DateTimeOffset CreatedAtUtc { get; set; } = DateTimeOffset.UtcNow;
+
+    // Navigation
+    public ChatThread? Thread { get; set; }
+}
