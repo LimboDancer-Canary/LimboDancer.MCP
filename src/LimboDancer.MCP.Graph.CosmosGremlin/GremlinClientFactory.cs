@@ -26,6 +26,13 @@ public sealed class GremlinClientFactory : IGremlinClientFactory
     /// </summary>
     public IGremlinClient Create()
     {
+        // Enforce GraphSON2 only for Cosmos Gremlin
+        if (_options.Serializer == GraphSonVersion.GraphSON3)
+        {
+            throw new NotSupportedException(
+                "Cosmos Gremlin only supports GraphSON2. Please update GremlinOptions.Serializer to GraphSonVersion.GraphSON2.");
+        }
+
         var username = $"/dbs/{_options.Database}/colls/{_options.Graph}";
         var server = new GremlinServer(
             hostname: _options.Host,
@@ -34,12 +41,8 @@ public sealed class GremlinClientFactory : IGremlinClientFactory
             username: username,
             password: _options.AuthKey);
 
-        // Cosmos Gremlin speaks GraphSON2 today
-        IGraphSONMessageSerializer serializer = _options.Serializer switch
-        {
-            GraphSonVersion.GraphSON3 => new GraphSON3MessageSerializer(),
-            _ => new GraphSON2MessageSerializer()
-        };
+        // Always use GraphSON2MessageSerializer for Cosmos Gremlin
+        var serializer = new GraphSON2MessageSerializer();
 
         // Pooling via GremlinClient constructor overload
         var connectionPoolSettings = new ConnectionPoolSettings

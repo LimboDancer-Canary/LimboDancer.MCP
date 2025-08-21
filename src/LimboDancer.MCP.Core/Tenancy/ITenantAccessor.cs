@@ -8,5 +8,5 @@ namespace LimboDancer.MCP.Core.Tenancy;
 
 public interface ITenantAccessor
 {
-    Guid TenantId { get; }
+    string TenantId { get; }
 }
