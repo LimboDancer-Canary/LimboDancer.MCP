@@ -51,5 +51,6 @@ public sealed class GremlinOptions
 public enum GraphSonVersion
 {
     GraphSON2,
+    [Obsolete("Cosmos Gremlin only supports GraphSON2")]
     GraphSON3
 }

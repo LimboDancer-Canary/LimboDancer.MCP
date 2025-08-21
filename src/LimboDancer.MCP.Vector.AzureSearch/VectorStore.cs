@@ -21,6 +21,7 @@ using Azure.Core;
 using Azure.Search.Documents;
 using Azure.Search.Documents.Indexes.Models;
 using Azure.Search.Documents.Models;
+using MemoryDoc = LimboDancer.MCP.Vector.AzureSearch.Models.MemoryDoc;
 
 namespace LimboDancer.MCP.Vector.AzureSearch
 {
@@ -281,24 +282,6 @@ namespace LimboDancer.MCP.Vector.AzureSearch
         // -------------------------
         // Public models
         // -------------------------
-
-        /// <summary>
-        /// Public ingestion/search model (external to index POCO).
-        /// Ensure TenantId is populated at ingestion time.
-        /// </summary>
-        public sealed class MemoryDoc
-        {
-            public string Id { get; set; } = default!;
-            public string? TenantId { get; set; }
-            public string? Label { get; set; }
-            public string? Kind { get; set; }
-            public string? Status { get; set; }
-            public string? Tags { get; set; }
-            public string Content { get; set; } = string.Empty;
-            public float[] ContentVector { get; set; } = Array.Empty<float>();
-            public DateTimeOffset? CreatedUtc { get; set; }
-            public DateTimeOffset? UpdatedUtc { get; set; }
-        }
 
         public sealed class SearchResultItem
         {

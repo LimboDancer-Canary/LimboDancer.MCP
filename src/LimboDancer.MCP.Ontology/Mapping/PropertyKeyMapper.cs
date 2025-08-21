@@ -4,6 +4,7 @@
 
 using System;
 using System.Collections.Generic;
+using Microsoft.Extensions.DependencyInjection;
 
 namespace LimboDancer.MCP.Ontology.Mapping
 {
@@ -40,5 +41,33 @@ namespace LimboDancer.MCP.Ontology.Mapping
 
         public bool TryMapEdgeLabel(string predicate, out string graphEdgeLabel)
             => _edge.TryGetValue(predicate, out graphEdgeLabel!);
+    }
+
+    /// <summary>
+    /// Extension methods for registering property key mapper services.
+    /// </summary>
+    public static class ServiceCollectionExtensions
+    {
+        /// <summary>
+        /// Registers IPropertyKeyMapper as singleton using DefaultPropertyKeyMapper.
+        /// </summary>
+        public static IServiceCollection AddPropertyKeyMapper(this IServiceCollection services)
+        {
+            services.AddSingleton<IPropertyKeyMapper, DefaultPropertyKeyMapper>();
+            return services;
+        }
+
+        /// <summary>
+        /// Registers IPropertyKeyMapper as singleton using DefaultPropertyKeyMapper with custom mappings.
+        /// </summary>
+        public static IServiceCollection AddPropertyKeyMapper(
+            this IServiceCollection services,
+            IReadOnlyDictionary<string, string>? propertyMap = null,
+            IReadOnlyDictionary<string, string>? edgeMap = null)
+        {
+            services.AddSingleton<IPropertyKeyMapper>(provider => 
+                new DefaultPropertyKeyMapper(propertyMap, edgeMap));
+            return services;
+        }
     }
 }
