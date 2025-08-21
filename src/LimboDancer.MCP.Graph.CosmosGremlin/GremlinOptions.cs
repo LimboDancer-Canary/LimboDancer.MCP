@@ -1,24 +1,50 @@
-﻿namespace LimboDancer.MCP.Graph.CosmosGremlin;
+﻿using System.ComponentModel;
+
+namespace LimboDancer.MCP.Graph.CosmosGremlin;
 
 public sealed class GremlinOptions
 {
-    /// <summary>Hostname of the Cosmos DB (Gremlin API) endpoint.</summary>
+    /// <summary>Cosmos DB Gremlin host. Example: your-account.gremlin.cosmos.azure.com</summary>
     public string Host { get; set; } = string.Empty;
 
-    /// <summary>Port (usually 443).</summary>
+    /// <summary>Port (Cosmos = 443)</summary>
     public int Port { get; set; } = 443;
 
+    /// <summary>Use TLS for Cosmos (true)</summary>
+    public bool EnableSsl { get; set; } = true;
+
     /// <summary>Whether to use TLS.</summary>
-    public bool UseSsl { get; set; } = true;
+    [Obsolete("Use EnableSsl instead. This property will be removed in a future version.")]
+    [EditorBrowsable(EditorBrowsableState.Never)]
+    public bool UseSsl 
+    { 
+        get => EnableSsl; 
+        set => EnableSsl = value; 
+    }
 
-    /// <summary>Auth key (Cosmos primary key).</summary>
-    public string AuthKey { get; set; } = string.Empty;
-
-    /// <summary>Cosmos DB database name (Graph API).</summary>
+    /// <summary>Cosmos DB database (a.k.a. database/graph account db)</summary>
     public string Database { get; set; } = string.Empty;
 
-    /// <summary>Graph (container) name.</summary>
+    /// <summary>Graph (container) name</summary>
     public string Graph { get; set; } = string.Empty;
+
+    /// <summary>Primary (or secondary) key</summary>
+    public string AuthKey { get; set; } = string.Empty;
+
+    /// <summary>Primary (or secondary) key</summary>
+    [Obsolete("Use AuthKey instead. This property will be removed in a future version.")]
+    [EditorBrowsable(EditorBrowsableState.Never)]
+    public string PrimaryKey 
+    { 
+        get => AuthKey; 
+        set => AuthKey = value; 
+    }
+
+    /// <summary>Pool size for underlying WebSocket connections</summary>
+    public int ConnectionPoolSize { get; set; } = 8;
+
+    /// <summary>Request serializer version; Cosmos Gremlin API supports GraphSON 2.x</summary>
+    public GraphSonVersion Serializer { get; set; } = GraphSonVersion.GraphSON2;
 }
 
 
