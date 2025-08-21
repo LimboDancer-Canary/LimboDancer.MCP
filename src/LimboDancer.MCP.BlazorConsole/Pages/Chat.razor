@@ -1,0 +1,99 @@
+﻿@page "/chat"
+@attribute [Authorize(Roles = "ChatUser")]
+@inject HttpClient Http
+@inject NavigationManager Nav
+
+<h3>Chat</h3>
+
+@if (string.IsNullOrWhiteSpace(SessionId))
+{
+    <button class="btn btn-primary" @onclick="CreateSession">Start session</button>
+}
+else
+{
+    <div>
+        <ul>
+            @foreach (var m in History)
+            {
+                <li><b>@m.role</b>: @m.content</li>
+            }
+        </ul>
+        <input class="form-control" @bind="Message" @onkeydown="OnKeyDown" placeholder="Type a message..." />
+        <button class="btn btn-primary" @onclick="Send">Send</button>
+    </div>
+
+    <h5>Stream</h5>
+    <pre>@StreamText</pre>
+}
+
+@code {
+    private string TenantId = "dev-tenant-id"; // derive from token in production
+    private string? SessionId;
+    private string Message = string.Empty;
+    private string StreamText = string.Empty;
+
+    private record Msg(string role, string content);
+    private List<Msg> History = new();
+
+    private async Task CreateSession()
+    {
+        var resp = await Http.PostAsJsonAsync($"/api/v1/tenants/{TenantId}/chat/sessions", new { systemPrompt = (string?)null });
+        var created = await resp.Content.ReadFromJsonAsync<CreateSessionResponse>();
+        SessionId = created?.SessionId;
+        await LoadHistory();
+    }
+
+    private async Task LoadHistory()
+    {
+        var resp = await Http.GetAsync($"/api/v1/tenants/{TenantId}/chat/sessions/{SessionId}/history");
+        var list = await resp.Content.ReadFromJsonAsync<List<Msg>>();
+        History = list ?? new();
+        StateHasChanged();
+    }
+
+    private async Task Send()
+    {
+        if (string.IsNullOrWhiteSpace(Message)) return;
+        var resp = await Http.PostAsJsonAsync($"/api/v1/tenants/{TenantId}/chat/sessions/{SessionId}/messages", new { role = "user", content = Message });
+        Message = string.Empty;
+        _ = StartStream();
+    }
+
+    private async Task StartStream()
+    {
+        var req = new HttpRequestMessage(HttpMethod.Get, $"/api/v1/tenants/{TenantId}/chat/sessions/{SessionId}/stream");
+        req.Headers.Accept.ParseAdd("text/event-stream");
+        using var resp = await Http.SendAsync(req, HttpCompletionOption.ResponseHeadersRead);
+        using var stream = await resp.Content.ReadAsStreamAsync();
+        using var reader = new StreamReader(stream);
+
+        while (!reader.EndOfStream)
+        {
+            var line = await reader.ReadLineAsync();
+            if (line is null) break;
+            if (line.StartsWith("data: "))
+            {
+                var json = line.Substring("data: ".Length);
+                var ev = System.Text.Json.JsonSerializer.Deserialize<ChatEvent>(json);
+                if (ev is null) continue;
+                if (ev.Type == "token")
+                    StreamText += ev.Content;
+                else if (ev.Type == "message.completed")
+                {
+                    StreamText += "\n";
+                    History.Add(new Msg("assistant", ev.Content ?? ""));
+                    await LoadHistory();
+                }
+                StateHasChanged();
+            }
+        }
+    }
+
+    private async Task OnKeyDown(KeyboardEventArgs e)
+    {
+        if (e.Key == "Enter") await Send();
+    }
+
+    private sealed record CreateSessionResponse(string SessionId);
+    private sealed record ChatEvent(string Type, string SessionId, string? Content, string? CorrelationId, string? ErrorCode, string? ErrorMessage);
+}
