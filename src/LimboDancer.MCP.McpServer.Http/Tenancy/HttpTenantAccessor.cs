@@ -5,15 +5,10 @@ using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
+using LimboDancer.MCP.Core.Tenancy;
 
 namespace LimboDancer.MCP.McpServer.Http.Tenancy
 {
-    public interface ITenantAccessor
-    {
-        string TenantId { get; }
-        bool IsDevelopment { get; }
-    }
-
     public sealed class HttpTenantAccessor : ITenantAccessor
     {
         private const string TenantClaimType = "tenant_id";
