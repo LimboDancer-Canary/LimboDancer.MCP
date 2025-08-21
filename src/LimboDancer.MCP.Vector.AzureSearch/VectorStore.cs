@@ -1,13 +1,14 @@
 // File: /src/LimboDancer.MCP.Vector.AzureSearch/VectorStore.cs
 // Purpose:
-//   Unified Azure AI Search client wrapper for memory docs with hybrid (text + vector) search,
-//   aligned with SearchIndexBuilder's constants and schema.
+//   Unified Azure AI Search client wrapper for memory docs with hybrid (text + vector) search.
+//   Now aligned with MemoryDoc as the single source of truth for field names and schema.
 //
 // Highlights:
 //   - Constructors: (a) SearchClient, (b) endpoint+key+(indexName)
 //   - Hybrid search: lex/semantic + vector query combined in one call
 //   - Tenant scoping: mandatory filter (when provided)
-//   - Field names & profiles match SearchIndexBuilder
+//   - Field names derived directly from MemoryDoc properties via nameof()
+//   - Removed duplicate MemoryIndexDocument class
 //
 // Dependencies: Azure.Search.Documents (v11+)
 
@@ -35,19 +36,21 @@ namespace LimboDancer.MCP.Vector.AzureSearch
         private const string DefaultVectorProfile = SearchIndexBuilder.DefaultVectorProfile;
         private const string DefaultSemanticConfig = SearchIndexBuilder.DefaultSemanticConfig;
 
-        // Index field names (single source of truth; must match SearchIndexBuilder.MemoryIndexDocument)
+        // Index field names (single source of truth; derived from MemoryDoc properties)
         private static class F
         {
-            public const string Id = nameof(MemoryIndexDocument.Id);
-            public const string TenantId = nameof(MemoryIndexDocument.TenantId);
-            public const string Label = nameof(MemoryIndexDocument.Label);
-            public const string Kind = nameof(MemoryIndexDocument.Kind);
-            public const string Status = nameof(MemoryIndexDocument.Status);
-            public const string Tags = nameof(MemoryIndexDocument.Tags);
-            public const string Content = nameof(MemoryIndexDocument.Content);
-            public const string ContentVector = nameof(MemoryIndexDocument.ContentVector);
-            public const string CreatedUtc = nameof(MemoryIndexDocument.CreatedUtc);
-            public const string UpdatedUtc = nameof(MemoryIndexDocument.UpdatedUtc);
+            public const string Id = nameof(MemoryDoc.Id);
+            public const string TenantId = nameof(MemoryDoc.TenantId);
+            public const string Label = nameof(MemoryDoc.Label);
+            public const string Kind = nameof(MemoryDoc.Kind);
+            public const string Status = nameof(MemoryDoc.Status);
+            public const string Tags = nameof(MemoryDoc.Tags);
+            public const string SourceId = nameof(MemoryDoc.SourceId);
+            public const string SourceType = nameof(MemoryDoc.SourceType);
+            public const string Content = nameof(MemoryDoc.Content);
+            public const string ContentVector = nameof(MemoryDoc.ContentVector);
+            public const string CreatedUtc = nameof(MemoryDoc.CreatedUtc);
+            public const string UpdatedUtc = nameof(MemoryDoc.UpdatedUtc);
         }
 
         // -------------------------
@@ -179,6 +182,8 @@ namespace LimboDancer.MCP.Vector.AzureSearch
                 [F.Kind] = d.Kind ?? string.Empty,
                 [F.Status] = d.Status ?? string.Empty,
                 [F.Tags] = d.Tags ?? string.Empty,
+                [F.SourceId] = d.SourceId,
+                [F.SourceType] = d.SourceType,
                 [F.Content] = d.Content ?? string.Empty,
                 [F.ContentVector] = d.ContentVector ?? Array.Empty<float>(),
                 [F.CreatedUtc] = d.CreatedUtc,
@@ -294,24 +299,6 @@ namespace LimboDancer.MCP.Vector.AzureSearch
             public DateTimeOffset? CreatedUtc { get; set; }
             public DateTimeOffset? UpdatedUtc { get; set; }
             public double? Score { get; set; }
-        }
-
-        // -------------------------
-        // Internal index POCO (for reference only; not used directly)
-        // -------------------------
-        // This mirrors SearchIndexBuilder.MemoryIndexDocument. Kept here purely to reduce magic strings.
-        private sealed class MemoryIndexDocument
-        {
-            public string Id { get; set; } = default!;
-            public string TenantId { get; set; } = default!;
-            public string Label { get; set; } = default!;
-            public string Kind { get; set; } = default!;
-            public string Status { get; set; } = default!;
-            public string? Tags { get; set; }
-            public string Content { get; set; } = default!;
-            public float[] ContentVector { get; set; } = Array.Empty<float>();
-            public DateTimeOffset? CreatedUtc { get; set; }
-            public DateTimeOffset? UpdatedUtc { get; set; }
         }
     }
 }

@@ -1,4 +1,9 @@
 // File: /src/LimboDancer.MCP.Vector.AzureSearch/SearchIndexBuilder.cs
+// Purpose: 
+//   Creates and manages Azure AI Search index schema using MemoryDoc as the unified model.
+//   Removed internal MemoryIndexDocument duplication in favor of direct MemoryDoc usage.
+//
+// (UPDATED) Uses MemoryDoc directly with FieldBuilder for schema generation.
 // (UPDATED) Adds an internal adapter interface so unit tests can verify the built index.
 
 using Azure;
@@ -8,6 +13,7 @@ using System;
 using System.ComponentModel.DataAnnotations;
 using System.Threading;
 using System.Threading.Tasks;
+using MemoryDoc = LimboDancer.MCP.Vector.AzureSearch.Models.MemoryDoc;
 
 namespace LimboDancer.MCP.Vector.AzureSearch
 {
@@ -71,7 +77,7 @@ namespace LimboDancer.MCP.Vector.AzureSearch
 
         private static void ApplySchema(SearchIndex index, int vectorDimensions, string semanticConfigName)
         {
-            index.Fields = new FieldBuilder().Build(typeof(MemoryIndexDocument));
+            index.Fields = new FieldBuilder().Build(typeof(MemoryDoc));
 
             var algoName = "hnsw-default";
             index.VectorSearch ??= new VectorSearch();
@@ -80,7 +86,7 @@ namespace LimboDancer.MCP.Vector.AzureSearch
             index.VectorSearch.Algorithms.Add(new HnswAlgorithmConfiguration(algoName));
             index.VectorSearch.Profiles.Add(new VectorSearchProfile(DefaultVectorProfile, algoName));
 
-            var vectorField = index.GetField(nameof(MemoryIndexDocument.ContentVector)) as SearchField;
+            var vectorField = index.GetField(nameof(MemoryDoc.ContentVector)) as SearchField;
             if (vectorField is not null)
             {
                 vectorField.VectorSearchProfileName = DefaultVectorProfile;
@@ -93,35 +99,17 @@ namespace LimboDancer.MCP.Vector.AzureSearch
                 semanticConfigName,
                 new PrioritizedFields
                 {
-                    TitleField = new SemanticField(nameof(MemoryIndexDocument.Label)),
+                    TitleField = new SemanticField(nameof(MemoryDoc.Label)),
                     ContentFields =
                     {
-                        new SemanticField(nameof(MemoryIndexDocument.Content)),
-                        new SemanticField(nameof(MemoryIndexDocument.Kind)),
-                        new SemanticField(nameof(MemoryIndexDocument.Status))
+                        new SemanticField(nameof(MemoryDoc.Content)),
+                        new SemanticField(nameof(MemoryDoc.Kind)),
+                        new SemanticField(nameof(MemoryDoc.Status))
                     },
                     KeywordsFields =
                     {
-                        new SemanticField(nameof(MemoryIndexDocument.Tags))
+                        new SemanticField(nameof(MemoryDoc.Tags))
                     }
                 }));
-        }
-
-        private sealed class MemoryIndexDocument
-        {
-            [SimpleField(IsKey = true, IsFilterable = true)] public string Id { get; set; } = default!;
-            [SimpleField(IsFilterable = true, IsFacetable = true)] public string TenantId { get; set; } = default!;
-            [SearchableField(IsFilterable = true, IsSortable = true)] public string Label { get; set; } = default!;
-            [SimpleField(IsFilterable = true, IsFacetable = true)] public string Kind { get; set; } = default!;
-            [SimpleField(IsFilterable = true, IsFacetable = true)] public string Status { get; set; } = default!;
-            [SearchableField(IsFilterable = true, IsFacetable = true)] public string? Tags { get; set; }
-            [SimpleField(IsFilterable = true)] public string? SourceId { get; set; }
-            [SimpleField(IsFilterable = true)] public string? SourceType { get; set; }
-            [SearchableField] public string Content { get; set; } = default!;
-            [SearchField(VectorSearchDimensions = 1536, VectorSearchProfileName = DefaultVectorProfile, DataType = SearchFieldDataType.Collection(SearchFieldDataType.Single))]
-            public float[] ContentVector { get; set; } = Array.Empty<float>();
-            [SimpleField(IsFilterable = true, IsSortable = true)] public DateTimeOffset? CreatedUtc { get; set; }
-            [SimpleField(IsFilterable = true, IsSortable = true)] public DateTimeOffset? UpdatedUtc { get; set; }
-        }
     }
 }
