@@ -1,45 +1,55 @@
+using LimboDancer.MCP.McpServer.Http.Chat;
+using LimboDancer.MCP.McpServer.Http.Infrastructure;
+
 var builder = WebApplication.CreateBuilder(args);
 
 builder.Services.AddHttpContextAccessor();
+
+// Tenancy accessor is already registered in your code as Core.Tenancy.ITenantAccessor
 builder.Services.AddScoped<LimboDancer.MCP.Core.Tenancy.ITenantAccessor, LimboDancer.MCP.McpServer.Http.Tenancy.HttpTenantAccessor>();
 
+// AuthN/AuthZ
+builder.Services.AddApiAuthentication(builder.Configuration);
 
-// Add services to the container.
-// Learn more about configuring OpenAPI at https://aka.ms/aspnet/openapi
+// CORS (tighten origins in appsettings)
+builder.Services.AddCors(options =>
+{
+    options.AddPolicy("Default", policy =>
+    {
+        var origins = builder.Configuration.GetSection("Cors:AllowedOrigins").Get<string[]>() ?? Array.Empty<string>();
+        policy.WithOrigins(origins)
+            .AllowAnyHeader()
+            .AllowAnyMethod()
+            .AllowCredentials();
+    });
+});
+
+// Controllers + minimal APIs
+builder.Services.AddControllers();
+
+// Chat orchestrator (MVP)
+builder.Services.AddSingleton<IChatOrchestrator, InMemoryChatOrchestrator>();
+
+// OpenAPI (dev only)
 builder.Services.AddOpenApi();
 
 var app = builder.Build();
 
-// Configure the HTTP request pipeline.
 if (app.Environment.IsDevelopment())
 {
     app.MapOpenApi();
+    app.UseDeveloperExceptionPage();
 }
 
 app.UseHttpsRedirection();
+app.UseCors("Default");
 
-var summaries = new[]
-{
-    "Freezing", "Bracing", "Chilly", "Cool", "Mild", "Warm", "Balmy", "Hot", "Sweltering", "Scorching"
-};
+app.UseAuthentication();
+app.UseAuthorization();
 
-app.MapGet("/weatherforecast", () =>
-{
-    var forecast =  Enumerable.Range(1, 5).Select(index =>
-        new WeatherForecast
-        (
-            DateOnly.FromDateTime(DateTime.Now.AddDays(index)),
-            Random.Shared.Next(-20, 55),
-            summaries[Random.Shared.Next(summaries.Length)]
-        ))
-        .ToArray();
-    return forecast;
-})
-.WithName("GetWeatherForecast");
+app.MapControllers();
+
+// Example existing endpoint
+app.MapGet("/health", () => Results.Ok(new { status = "ok" }));
 
 app.Run();
-
-record WeatherForecast(DateOnly Date, int TemperatureC, string? Summary)
-{
-    public int TemperatureF => 32 + (int)(TemperatureC / 0.5556);
-}
