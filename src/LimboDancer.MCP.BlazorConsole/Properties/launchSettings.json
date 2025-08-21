@@ -1,42 +1,27 @@
 {
-  "$schema": "https://json.schemastore.org/launchsettings.json",
   "iisSettings": {
     "windowsAuthentication": false,
-    "anonymousAuthentication": true
+    "anonymousAuthentication": true,
+    "iisExpress": {
+      "applicationUrl": "http://localhost:22594",
+      "sslPort": 44363
+    }
   },
   "profiles": {
-    "LimboDancer.MCP.McpServer (HTTP)": {
+    "LimboDancer.MCP.BlazorConsole": {
       "commandName": "Project",
       "dotnetRunMessages": true,
       "launchBrowser": true,
-      "launchUrl": "api/ontology/export",
-      "applicationUrl": "http://localhost:5179",
+      "applicationUrl": "https://localhost:7127;http://localhost:5221",
       "environmentVariables": {
-        "ASPNETCORE_ENVIRONMENT": "Development",
-        "Server:BaseUrl": "http://localhost:5179",
-        "Tenancy:HeaderName": "X-Tenant-Id",
-        "Cors:AllowedOrigins": "http://localhost:5179;http://localhost:5000;https://localhost:5001"
-      }
-    },
-    "LimboDancer.MCP.McpServer (HTTPS)": {
-      "commandName": "Project",
-      "dotnetRunMessages": true,
-      "launchBrowser": false,
-      "applicationUrl": "https://localhost:7256",
-      "environmentVariables": {
-        "ASPNETCORE_ENVIRONMENT": "Development",
-        "Server:BaseUrl": "https://localhost:7256",
-        "Tenancy:HeaderName": "X-Tenant-Id",
-        "Cors:AllowedOrigins": "https://localhost:7256;http://localhost:5000;https://localhost:5001"
+        "ASPNETCORE_ENVIRONMENT": "Development"
       }
     },
     "IIS Express": {
       "commandName": "IISExpress",
-      "launchBrowser": false,
+      "launchBrowser": true,
       "environmentVariables": {
-        "ASPNETCORE_ENVIRONMENT": "Development",
-        "Server:BaseUrl": "http://localhost:5179",
-        "Tenancy:HeaderName": "X-Tenant-Id"
+        "ASPNETCORE_ENVIRONMENT": "Development"
       }
     }
   }
