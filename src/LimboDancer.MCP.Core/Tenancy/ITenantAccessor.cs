@@ -1,12 +1,7 @@
-﻿using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
-
-namespace LimboDancer.MCP.Core.Tenancy;
+﻿namespace LimboDancer.MCP.Core.Tenancy;
 
 public interface ITenantAccessor
 {
     string TenantId { get; }
+    bool IsDevelopment { get; }
 }

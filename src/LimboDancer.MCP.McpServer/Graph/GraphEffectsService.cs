@@ -1,13 +1,4 @@
-﻿// UPDATED: now depends on central LimboDancer.MCP.Ontology.Mapping.IPropertyKeyMapper.
-// No other behavior changes; still enforces tenant and maps predicates.
-
-using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Threading;
-using System.Threading.Tasks;
-using Microsoft.Extensions.Logging;
-using LimboDancer.MCP.Ontology.Mapping;
+﻿using LimboDancer.MCP.Ontology.Mapping;
 
 namespace LimboDancer.MCP.McpServer.Graph
 {
@@ -35,7 +26,7 @@ namespace LimboDancer.MCP.McpServer.Graph
     public sealed class GraphEffectsService : IGraphEffectsService
     {
         private readonly IGraphStore _graph;
-        private readonly IPropertyKeyMapper _keys; // ⬅ central mapper
+        private readonly IPropertyKeyMapper _keys;
         private readonly ITenantScopeAccessor _scope;
         private readonly ILogger<GraphEffectsService> _log;
 
@@ -90,47 +81,17 @@ namespace LimboDancer.MCP.McpServer.Graph
             }
 
             await _graph.UpsertVertexPropertyAsync(subjectId, propertyKey, effect.Value, tenantId, ct);
-            _log.LogDebug("Property upserted: {Subject}.{Key} = {Value} (Tenant={Tenant})",
-                subjectId, propertyKey, TruncateForLog(effect.Value), tenantId);
         }
 
         private async Task ApplyEdgeEffectAsync(string subjectId, GraphEffect effect, string? tenantId, CancellationToken ct)
         {
-            if (string.IsNullOrWhiteSpace(effect.EdgeTargetId))
+            if (string.IsNullOrWhiteSpace(effect.EdgeTargetId) || string.IsNullOrWhiteSpace(effect.EdgeLabel))
             {
-                _log.LogDebug("Skipping edge effect with no target. Subject={Subject}", subjectId);
+                _log.LogWarning("Edge effect missing target or label. Subject={Subject}", subjectId);
                 return;
             }
 
-            var relationPredicate = effect.EdgeLabel ?? effect.Predicate;
-            if (string.IsNullOrWhiteSpace(relationPredicate))
-            {
-                _log.LogWarning("Edge effect missing both EdgeLabel and Predicate. Subject={Subject} -> Target={Target} — skipped.", subjectId, effect.EdgeTargetId);
-                return;
-            }
-
-            if (!_keys.TryMapEdgeLabel(relationPredicate!, out var edgeLabel))
-            {
-                _log.LogWarning("Unknown edge predicate '{Predicate}'. Subject={Subject} -> Target={Target} — effect skipped.", relationPredicate, subjectId, effect.EdgeTargetId);
-                return;
-            }
-
-            IDictionary<string, object?>? edgeProps = null;
-            if (effect.Value is not null)
-            {
-                edgeProps = new Dictionary<string, object?> { ["value"] = effect.Value };
-            }
-
-            await _graph.UpsertEdgeAsync(subjectId, effect.EdgeTargetId!, edgeLabel, edgeProps, tenantId, ct);
-            _log.LogDebug("Edge upserted: {Subject}-[{Label}]->{Target} (Tenant={Tenant})", subjectId, edgeLabel, effect.EdgeTargetId, tenantId);
-        }
-
-        private static object? TruncateForLog(object? value)
-        {
-            if (value is null) return null;
-            var s = value.ToString();
-            if (s is null) return value;
-            return s.Length <= 512 ? s : s.Substring(0, 512) + "…";
+            await _graph.UpsertEdgeAsync(subjectId, effect.EdgeTargetId, effect.EdgeLabel, null, tenantId, ct);
         }
     }
 }

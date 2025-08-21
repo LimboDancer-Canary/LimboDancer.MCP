@@ -20,6 +20,8 @@ public sealed class AmbientTenantAccessor : ITenantAccessor
     public static void Clear() => _ambient.Value = null;
 
     public string TenantId => _ambient.Value ?? throw new InvalidOperationException("No tenant context available.");
+    
+    public bool IsDevelopment => false; // AmbientTenantAccessor is typically used in CLI/non-HTTP contexts
 }
 
 /*
