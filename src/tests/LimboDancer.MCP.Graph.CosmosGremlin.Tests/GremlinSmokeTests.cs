@@ -14,7 +14,7 @@ public class GremlinSmokeTests
         Database = Environment.GetEnvironmentVariable("COSMOS_GREMLIN_DB") ?? "",
         Graph = Environment.GetEnvironmentVariable("COSMOS_GREMLIN_GRAPH") ?? "",
         AuthKey = Environment.GetEnvironmentVariable("COSMOS_GREMLIN_KEY") ?? "",
-        Serializer = GraphSonVersion.GraphSON2
+        GraphSONVersion = GraphSonVersion.GraphSON2
     };
 
     [Fact(Skip = "Set COSMOS_GREMLIN_* env vars to run against a live Cosmos Gremlin API.")]
@@ -32,7 +32,7 @@ public class GremlinSmokeTests
             o.Database = opts.Database;
             o.Graph = opts.Graph;
             o.AuthKey = opts.AuthKey;
-            o.Serializer = opts.Serializer;
+            o.GraphSONVersion = opts.GraphSONVersion;
         });
         services.AddSingleton<IGremlinClientFactory, GremlinClientFactory>();
 

@@ -1,5 +1,6 @@
 @page "/memory"
 @inject SearchClient Search
+@using LimboDancer.MCP.Vector.AzureSearch.Models
 
 <h3>Vector Memory (Azure AI Search)</h3>
 
@@ -10,15 +11,15 @@
 else
 {
     <div class="searchpanel">
-        <input class="text" @bind="query" placeholder="Query text…" />
+        <input class="text" @bind="query" placeholder="Query textï¿½" />
         <input class="text" @bind="tag" placeholder="Filter tag (equals) e.g. kind:vector" />
-        <input class="text" @bind="externalId" placeholder="Filter ExternalId (equals)" />
+        <input class="text" @bind="sourceId" placeholder="Filter SourceId (equals)" />
         <button class="btn" @onclick="DoSearchAsync">Search</button>
     </div>
 
     @if (busy)
     {
-        <p>Searching…</p>
+        <p>Searchingï¿½</p>
     }
     else if (results is null)
     {
@@ -31,7 +32,7 @@ else
                 <tr>
                     <th>Score</th>
                     <th>Id</th>
-                    <th>ExternalId</th>
+                    <th>SourceId</th>
                     <th>Tags</th>
                     <th>Preview</th>
                 </tr>
@@ -48,9 +49,9 @@ else
                         <tr>
                             <td>@r.Score.ToString("F3")</td>
                             <td>@r.Doc.Id</td>
-                            <td>@r.Doc.ExternalId</td>
-                            <td>@(r.Doc.Tags is null ? "" : string.Join(", ", r.Doc.Tags))</td>
-                            <td>@(r.Doc.Content?.Length > 180 ? r.Doc.Content[..180] + "…" : r.Doc.Content)</td>
+                            <td>@r.Doc.SourceId</td>
+                            <td>@r.Doc.Tags</td>
+                            <td>@(r.Doc.Content?.Length > 180 ? r.Doc.Content[..180] + "ï¿½" : r.Doc.Content)</td>
                         </tr>
                     }
                 }
@@ -64,7 +65,7 @@ else
 
     private string? query;
     private string? tag;
-    private string? externalId;
+    private string? sourceId;
     private bool busy;
     private List<(MemoryDoc Doc, double Score)>? results;
 
@@ -78,8 +79,8 @@ else
         {
             Size = 50
         };
-        options.Select.AddRange(new[] { "id", "content", "tags", "externalId" });
-        options.SearchFields.AddRange(new[] { "content", "tags", "externalId" });
+        options.Select.AddRange(new[] { "id", "content", "tags", "sourceId" });
+        options.SearchFields.AddRange(new[] { "content", "tags", "sourceId" });
 
         var filters = new List<string>();
 
@@ -88,9 +89,9 @@ else
         filters.Add(tenantFilter);
 
         if (!string.IsNullOrWhiteSpace(tag))
-            filters.Add($"tags/any(t: t eq '{Escape(tag)}')");
-        if (!string.IsNullOrWhiteSpace(externalId))
-            filters.Add($"externalId eq '{Escape(externalId)}'");
+            filters.Add($"tags eq '{Escape(tag)}'");
+        if (!string.IsNullOrWhiteSpace(sourceId))
+            filters.Add($"sourceId eq '{Escape(sourceId)}'");
 
         if (filters.Count > 0)
             options.Filter = string.Join(" and ", filters);
