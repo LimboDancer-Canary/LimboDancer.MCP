@@ -3,6 +3,7 @@ using Gremlin.Net.Process.Traversal;
 using LimboDancer.MCP.Graph.CosmosGremlin;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Xunit;
 
 public class GremlinSmokeTests
 {

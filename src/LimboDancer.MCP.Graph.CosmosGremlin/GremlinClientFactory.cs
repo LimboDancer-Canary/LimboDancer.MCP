@@ -35,16 +35,16 @@ public sealed class GremlinClientFactory : IGremlinClientFactory
             password: _options.AuthKey);
 
         // Cosmos Gremlin speaks GraphSON2 today
-        IGraphSONMessageSerializer serializer = _options.Serializer switch
+        var serializer = _options.Serializer switch
         {
-            GraphSonVersion.GraphSON3 => new GraphSON3MessageSerializer(),
-            _ => new GraphSON2MessageSerializer()
+            GraphSonVersion.GraphSON3 => (IMessageSerializer)new GraphSON3MessageSerializer(),
+            _ => (IMessageSerializer)new GraphSON2MessageSerializer()
         };
 
         // Pooling via GremlinClient constructor overload
         var connectionPoolSettings = new ConnectionPoolSettings
         {
-            MaxInProcessPerConnection = 4,
+            MaxInProcessPerConnection = _options.MaxInProcessPerConnection,
             PoolSize = _options.ConnectionPoolSize,
             ReconnectionAttempts = 3,
             ReconnectionBaseDelay = TimeSpan.FromSeconds(2)
