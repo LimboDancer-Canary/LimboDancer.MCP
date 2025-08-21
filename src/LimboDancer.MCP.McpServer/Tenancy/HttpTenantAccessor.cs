@@ -22,20 +22,22 @@ public sealed class HttpTenantAccessor : ITenantAccessor
         _opts = opts.Value;
     }
 
-    public Guid TenantId
+    public string TenantId
     {
         get
         {
             var ctx = _http.HttpContext;
-            if (ctx?.Request?.Headers is null) return _opts.DefaultTenantId;
+            if (ctx?.Request?.Headers is null) return _opts.DefaultTenantId.ToString();
 
             if (ctx.Request.Headers.TryGetValue("x-tenant-id", out var v) &&
                 Guid.TryParse(v.ToString(), out var g))
-                return g;
+                return g.ToString();
 
-            return _opts.DefaultTenantId;
+            return _opts.DefaultTenantId.ToString();
         }
     }
+
+    public bool IsDevelopment => false; // TODO: Add IHostEnvironment dependency if needed
 
     // These may not be part of the ITenantAccessor interface; exposed via explicit getters for convenience if present.
     public string? Package

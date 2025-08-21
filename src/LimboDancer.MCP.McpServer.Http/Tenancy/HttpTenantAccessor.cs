@@ -6,13 +6,10 @@ using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
+using LimboDancer.MCP.Core.Tenancy;
 
 namespace LimboDancer.MCP.McpServer.Http.Tenancy
 {
-    /// <summary>
-    /// HTTP-based tenant accessor that resolves the current TenantId (with dev fallbacks).
-    /// Implements the shared core ITenantAccessor to unify tenant resolution.
-    /// </summary>
     public sealed class HttpTenantAccessor : ITenantAccessor
     {
         private const string TenantClaimType = "tenant_id";
