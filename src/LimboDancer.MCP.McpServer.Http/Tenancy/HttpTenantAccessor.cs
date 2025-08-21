@@ -1,6 +1,7 @@
 ﻿using System;
 using System.Linq;
 using System.Security.Claims;
+using LimboDancer.MCP.Core.Tenancy;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Hosting;
@@ -8,18 +9,17 @@ using Microsoft.Extensions.Logging;
 
 namespace LimboDancer.MCP.McpServer.Http.Tenancy
 {
-    public interface ITenantAccessor
-    {
-        string TenantId { get; }
-        bool IsDevelopment { get; }
-    }
-
+    /// <summary>
+    /// HTTP-based tenant accessor that resolves the current TenantId (with dev fallbacks).
+    /// Implements the shared core ITenantAccessor to unify tenant resolution.
+    /// </summary>
     public sealed class HttpTenantAccessor : ITenantAccessor
     {
         private const string TenantClaimType = "tenant_id";
-        private const string DeprecatedTenantClaimType = "tid"; // for transitional support; logs a warning if used
+        private const string DeprecatedTenantClaimType = "tid";
         private const string TenantHeaderName = "X-Tenant-Id";
         private const string HttpItemsKey = "__mcp_tenant_id";
+
         private readonly IHttpContextAccessor _httpContextAccessor;
         private readonly IHostEnvironment _environment;
         private readonly IConfiguration _configuration;
@@ -37,7 +37,7 @@ namespace LimboDancer.MCP.McpServer.Http.Tenancy
             _logger = logger ?? throw new ArgumentNullException(nameof(logger));
         }
 
-        public bool IsDevelopment => _environment.IsDevelopment();
+        private bool IsDevelopment => _environment.IsDevelopment();
 
         public string TenantId
         {
@@ -46,12 +46,13 @@ namespace LimboDancer.MCP.McpServer.Http.Tenancy
                 var httpContext = _httpContextAccessor.HttpContext
                     ?? throw new InvalidOperationException("No active HTTP context is available to resolve the tenant.");
 
-                if (httpContext.Items.TryGetValue(HttpItemsKey, out var cached) && cached is string cachedTenant && !string.IsNullOrWhiteSpace(cachedTenant))
+                if (httpContext.Items.TryGetValue(HttpItemsKey, out var cached) &&
+                    cached is string cachedTenant &&
+                    !string.IsNullOrWhiteSpace(cachedTenant))
                 {
                     return cachedTenant;
                 }
 
-                // 1) Primary: claim "tenant_id" (standardized)
                 var user = httpContext.User;
                 var tenantFromClaim = user?.FindFirstValue(TenantClaimType);
                 if (!string.IsNullOrWhiteSpace(tenantFromClaim))
@@ -62,17 +63,16 @@ namespace LimboDancer.MCP.McpServer.Http.Tenancy
                     return tenantFromClaim;
                 }
 
-                // Transitional support for "tid" with warning, to ease migration
                 var deprecatedClaim = user?.FindFirstValue(DeprecatedTenantClaimType);
                 if (!string.IsNullOrWhiteSpace(deprecatedClaim))
                 {
                     deprecatedClaim = deprecatedClaim!.Trim();
                     httpContext.Items[HttpItemsKey] = deprecatedClaim;
-                    _logger.LogWarning("Resolved tenant from deprecated claim '{ClaimType}'. Please migrate to '{Preferred}'.", DeprecatedTenantClaimType, TenantClaimType);
+                    _logger.LogWarning("Resolved tenant from deprecated claim '{ClaimType}'. Please migrate to '{Preferred}'.",
+                        DeprecatedTenantClaimType, TenantClaimType);
                     return deprecatedClaim;
                 }
 
-                // 2) Development-only fallbacks: header or config
                 if (IsDevelopment)
                 {
                     if (httpContext.Request.Headers.TryGetValue(TenantHeaderName, out var headerValues))
@@ -95,15 +95,8 @@ namespace LimboDancer.MCP.McpServer.Http.Tenancy
                     }
                 }
 
-                _logger.LogError("Unable to resolve tenant. No '{ClaimType}' claim and Development-only fallbacks did not yield a tenant.", TenantClaimType);
-                throw new InvalidOperationException("Tenant resolution failed. A valid tenant_id claim is required.");
+                throw new InvalidOperationException("Unable to resolve TenantId from claims, header, or configuration.");
             }
         }
-    }
-
-    internal static class ClaimsPrincipalExtensions
-    {
-        public static string? FindFirstValue(this ClaimsPrincipal? principal, string claimType)
-            => principal?.FindFirst(claimType)?.Value;
     }
 }

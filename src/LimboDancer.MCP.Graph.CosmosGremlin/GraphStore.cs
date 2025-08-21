@@ -10,41 +10,14 @@ namespace LimboDancer.MCP.Graph.CosmosGremlin
 {
     /// <summary>
     /// GraphStore encapsulates Gremlin (Cosmos DB) vertex/edge upsert operations with tenant scoping.
-    ///
-    /// Migration Note (C4):
-    /// The legacy constructor GraphStore(IGremlinClient, Func&lt;string&gt;, ILogger&lt;GraphStore&gt;, ...) has been removed.
-    /// Replace usages with one of:
-    ///   new GraphStore(gremlinClient, () => tenantId, loggerFactory)
-    ///   new GraphStore(gremlinClient, tenantAccessor, loggerFactory)
-    /// Preconditions always acquire their logger via ILoggerFactory; no casting occurs now.
-    ///
-    /// TODO (G7): Introduce DI extension AddCosmosGremlinGraph(...) to centralize registration & options binding.
     /// </summary>
     public sealed class GraphStore
     {
         private readonly IGremlinClient _client;
         private readonly Preconditions _preconditions;
-        private readonly Func<string> _getTenantId;
+        private readonly ITenantAccessor _tenantAccessor;
         private readonly ILogger<GraphStore> _logger;
 
-        /// <summary>
-        /// Preferred constructor: supply a tenant id delegate and an ILoggerFactory.
-        /// </summary>
-        public GraphStore(
-            IGremlinClient client,
-            Func<string> getTenantId,
-            ILoggerFactory loggerFactory,
-            Preconditions? preconditions = null)
-        {
-            _client = client ?? throw new ArgumentNullException(nameof(client));
-            _getTenantId = getTenantId ?? throw new ArgumentNullException(nameof(getTenantId));
-            _logger = loggerFactory?.CreateLogger<GraphStore>() ?? throw new ArgumentNullException(nameof(loggerFactory));
-            _preconditions = preconditions ?? new Preconditions(client, getTenantId, loggerFactory.CreateLogger<Preconditions>());
-        }
-
-        /// <summary>
-        /// Overload that derives the tenant id from an ITenantAccessor.
-        /// </summary>
         public GraphStore(
             IGremlinClient client,
             ITenantAccessor tenantAccessor,
@@ -52,21 +25,20 @@ namespace LimboDancer.MCP.Graph.CosmosGremlin
             Preconditions? preconditions = null)
         {
             _client = client ?? throw new ArgumentNullException(nameof(client));
-            var accessor = tenantAccessor ?? throw new ArgumentNullException(nameof(tenantAccessor));
-            _getTenantId = () => accessor.TenantId;
+            _tenantAccessor = tenantAccessor ?? throw new ArgumentNullException(nameof(tenantAccessor));
             _logger = loggerFactory?.CreateLogger<GraphStore>() ?? throw new ArgumentNullException(nameof(loggerFactory));
-            _preconditions = preconditions ?? new Preconditions(client, _getTenantId, loggerFactory.CreateLogger<Preconditions>());
+            _preconditions = preconditions ?? new Preconditions(client, () => _tenantAccessor.TenantId, loggerFactory.CreateLogger<Preconditions>());
         }
 
-        // Upsert a vertex with tenant-scoped id and properties
+        private string TenantId => _tenantAccessor.TenantId;
+
         public async Task UpsertVertexAsync(string label, string localId, IDictionary<string, object>? properties = null, CancellationToken ct = default)
         {
             GraphWriteHelpers.ValidateLabel(label);
 
-            var tenantId = _getTenantId();
+            var tenantId = TenantId;
             var vertexId = GraphWriteHelpers.ToVertexId(tenantId, localId);
 
-            // Ensure vertex exists (create if not)
             var upsertQuery =
                 "g.V(vid).fold().coalesce(" +
                 "unfold()," +
@@ -83,13 +55,11 @@ namespace LimboDancer.MCP.Graph.CosmosGremlin
 
             await _client.SubmitAsync<dynamic>(upsertQuery, upsertBindings, cancellationToken: ct).ConfigureAwait(false);
 
-            // Set/update properties, excluding reserved ones
             var props = GraphWriteHelpers.WithTenantProperty(properties, tenantId);
             foreach (var kv in props)
             {
                 if (string.Equals(kv.Key, GraphWriteHelpers.TenantPropertyName, StringComparison.Ordinal))
                 {
-                    // Ensure tenant property is always enforced/update in case mismatch
                     var pQuery = "g.V(vid).property(tprop, tid)";
                     var pBindings = new Dictionary<string, object>
                     {
@@ -115,31 +85,23 @@ namespace LimboDancer.MCP.Graph.CosmosGremlin
             }
         }
 
-        // Upsert an edge between two tenant-scoped vertices, forbidding cross-tenant edges
         public async Task UpsertEdgeAsync(string label, string outLocalId, string inLocalId, IDictionary<string, object>? properties = null, CancellationToken ct = default)
         {
             GraphWriteHelpers.ValidateLabel(label);
 
-            var tenantId = _getTenantId();
+            var tenantId = TenantId;
             var outId = GraphWriteHelpers.ToVertexId(tenantId, outLocalId);
             var inId = GraphWriteHelpers.ToVertexId(tenantId, inLocalId);
 
-            // Explicit guards against cross-tenant mistakes (defensive, since we constructed the ids)
             GraphWriteHelpers.EnsureTenantMatches(tenantId, outId);
             GraphWriteHelpers.EnsureTenantMatches(tenantId, inId);
 
-            // Ensure both vertices exist and belong to tenant
             if (!await _preconditions.VertexExistsAsync(outLocalId, ct).ConfigureAwait(false))
-            {
                 throw new InvalidOperationException($"Out-vertex does not exist for tenant '{tenantId}': '{outLocalId}'.");
-            }
 
             if (!await _preconditions.VertexExistsAsync(inLocalId, ct).ConfigureAwait(false))
-            {
                 throw new InvalidOperationException($"In-vertex does not exist for tenant '{tenantId}': '{inLocalId}'.");
-            }
 
-            // Upsert the edge and enforce tenant property
             var upsertEdgeQuery =
                 "g.V(outId).has(tprop, tid).as('a')" +
                 ".V(inId).has(tprop, tid).as('b')" +
@@ -159,7 +121,6 @@ namespace LimboDancer.MCP.Graph.CosmosGremlin
 
             await _client.SubmitAsync<dynamic>(upsertEdgeQuery, bindings, cancellationToken: ct).ConfigureAwait(false);
 
-            // Apply/update additional properties
             var props = GraphWriteHelpers.WithTenantProperty(properties, tenantId);
             foreach (var kv in props)
             {
@@ -196,7 +157,7 @@ namespace LimboDancer.MCP.Graph.CosmosGremlin
 
         public async Task<dynamic?> GetVertexAsync(string localId, CancellationToken ct = default)
         {
-            var tenantId = _getTenantId();
+            var tenantId = TenantId;
             var vid = GraphWriteHelpers.ToVertexId(tenantId, localId);
 
             var query = "g.V(vid).has(tprop, tid).limit(1)";
@@ -215,7 +176,7 @@ namespace LimboDancer.MCP.Graph.CosmosGremlin
         public async Task<IReadOnlyCollection<dynamic>> QueryVerticesByLabelAsync(string label, CancellationToken ct = default)
         {
             GraphWriteHelpers.ValidateLabel(label);
-            var tenantId = _getTenantId();
+            var tenantId = TenantId;
 
             var query = "g.V().hasLabel(lbl).has(tprop, tid)";
             var bindings = new Dictionary<string, object>
@@ -230,7 +191,7 @@ namespace LimboDancer.MCP.Graph.CosmosGremlin
 
         public async Task DeleteVertexAsync(string localId, CancellationToken ct = default)
         {
-            var tenantId = _getTenantId();
+            var tenantId = TenantId;
             var vid = GraphWriteHelpers.ToVertexId(tenantId, localId);
 
             var query = "g.V(vid).has(tprop, tid).drop()";
@@ -248,7 +209,7 @@ namespace LimboDancer.MCP.Graph.CosmosGremlin
         {
             GraphWriteHelpers.ValidateLabel(label);
 
-            var tenantId = _getTenantId();
+            var tenantId = TenantId;
             var outId = GraphWriteHelpers.ToVertexId(tenantId, outLocalId);
             var inId = GraphWriteHelpers.ToVertexId(tenantId, inLocalId);
 
