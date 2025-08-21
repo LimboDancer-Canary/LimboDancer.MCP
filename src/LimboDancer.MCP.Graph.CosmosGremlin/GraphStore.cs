@@ -8,6 +8,18 @@ using LimboDancer.MCP.Core.Tenancy;
 
 namespace LimboDancer.MCP.Graph.CosmosGremlin
 {
+    /// <summary>
+    /// GraphStore encapsulates Gremlin (Cosmos DB) vertex/edge upsert operations with tenant scoping.
+    ///
+    /// Migration Note (C4):
+    /// The legacy constructor GraphStore(IGremlinClient, Func&lt;string&gt;, ILogger&lt;GraphStore&gt;, ...) has been removed.
+    /// Replace usages with one of:
+    ///   new GraphStore(gremlinClient, () => tenantId, loggerFactory)
+    ///   new GraphStore(gremlinClient, tenantAccessor, loggerFactory)
+    /// Preconditions always acquire their logger via ILoggerFactory; no casting occurs now.
+    ///
+    /// TODO (G7): Introduce DI extension AddCosmosGremlinGraph(...) to centralize registration & options binding.
+    /// </summary>
     public sealed class GraphStore
     {
         private readonly IGremlinClient _client;
@@ -16,24 +28,7 @@ namespace LimboDancer.MCP.Graph.CosmosGremlin
         private readonly ILogger<GraphStore> _logger;
 
         /// <summary>
-        /// Legacy constructor for backward compatibility.
-        /// </summary>
-        [Obsolete("Use constructor with ILoggerFactory or ITenantAccessor instead. This constructor will be removed in a future version.")]
-        public GraphStore(
-            IGremlinClient client,
-            Func<string> getTenantId,
-            ILogger<GraphStore> logger,
-            Preconditions? preconditions = null,
-            ILogger<Preconditions>? preconditionsLogger = null)
-        {
-            _client = client ?? throw new ArgumentNullException(nameof(client));
-            _getTenantId = getTenantId ?? throw new ArgumentNullException(nameof(getTenantId));
-            _logger = logger ?? throw new ArgumentNullException(nameof(logger));
-            _preconditions = preconditions ?? new Preconditions(client, getTenantId, preconditionsLogger ?? CreateFallbackLogger<Preconditions>(logger));
-        }
-
-        /// <summary>
-        /// Constructor with ILoggerFactory for better DI integration.
+        /// Preferred constructor: supply a tenant id delegate and an ILoggerFactory.
         /// </summary>
         public GraphStore(
             IGremlinClient client,
@@ -48,7 +43,7 @@ namespace LimboDancer.MCP.Graph.CosmosGremlin
         }
 
         /// <summary>
-        /// Constructor with ITenantAccessor for streamlined DI integration.
+        /// Overload that derives the tenant id from an ITenantAccessor.
         /// </summary>
         public GraphStore(
             IGremlinClient client,
@@ -61,13 +56,6 @@ namespace LimboDancer.MCP.Graph.CosmosGremlin
             _getTenantId = () => accessor.TenantId;
             _logger = loggerFactory?.CreateLogger<GraphStore>() ?? throw new ArgumentNullException(nameof(loggerFactory));
             _preconditions = preconditions ?? new Preconditions(client, _getTenantId, loggerFactory.CreateLogger<Preconditions>());
-        }
-
-        private static ILogger<T> CreateFallbackLogger<T>(ILogger baseLogger)
-        {
-            // Attempt to cast, but provide a better fallback if cast fails
-            return baseLogger as ILogger<T> ?? 
-                   throw new ArgumentException($"Logger cannot be cast to ILogger<{typeof(T).Name}>. Use constructor with ILoggerFactory instead.");
         }
 
         // Upsert a vertex with tenant-scoped id and properties
