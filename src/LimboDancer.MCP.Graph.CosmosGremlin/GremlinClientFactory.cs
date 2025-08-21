@@ -1,3 +1,4 @@
+#pragma warning disable CS1591 // Missing XML comment for publicly visible type or member
 using System.ComponentModel;
 using Gremlin.Net.Driver;
 using Gremlin.Net.Driver.Remote;
@@ -20,28 +21,46 @@ public sealed class GremlinClientFactory : IGremlinClientFactory
     public GremlinClientFactory(IOptions<GremlinOptions> options) => _options = options.Value;
 
     /// <summary>
-    /// Creates a Gremlin client configured for Cosmos DB Gremlin.
-    /// Username must be in the form: /dbs/{db}/colls/{graph}
-    /// Password is the Cosmos account key.
+    /// Creates a Gremlin client configured for Cosmos DB Gremlin or other Gremlin servers.
+    /// For Cosmos DB: Username must be in the form: /dbs/{db}/colls/{graph}; Password is the Cosmos account key.
+    /// For non-Cosmos: Uses empty username and null password.
+    /// Note: RequestTimeout is not enforced directly (future work G3); IsCosmos currently only toggles username/password formatting.
     /// </summary>
     public IGremlinClient Create()
     {
+        // Validate options at the start
+        _options.Validate();
+
         // Enforce GraphSON2 only for Cosmos Gremlin
-        if (_options.Serializer == GraphSonVersion.GraphSON3)
+        if (_options.GraphSONVersion == GraphSonVersion.GraphSON3)
         {
             throw new NotSupportedException(
-                "Cosmos Gremlin only supports GraphSON2. Please update GremlinOptions.Serializer to GraphSonVersion.GraphSON2.");
+                "Cosmos Gremlin only supports GraphSON2. Please update GremlinOptions.GraphSONVersion to GraphSonVersion.GraphSON2.");
         }
 
-        var username = $"/dbs/{_options.Database}/colls/{_options.Graph}";
+        // Conditionally set username/password based on IsCosmos
+        string? username;
+        string? password;
+        
+        if (_options.IsCosmos)
+        {
+            username = $"/dbs/{_options.Database}/colls/{_options.Graph}";
+            password = _options.AuthKey;
+        }
+        else
+        {
+            username = string.Empty;
+            password = null;
+        }
+
         var server = new GremlinServer(
             hostname: _options.Host,
             port: _options.Port,
             enableSsl: _options.EnableSsl,
             username: username,
-            password: _options.AuthKey);
+            password: password);
 
-        // Always use GraphSON2MessageSerializer for Cosmos Gremlin
+        // Always use GraphSON2MessageSerializer for Cosmos Gremlin compatibility
         var serializer = new GraphSON2MessageSerializer();
 
         // Pooling via GremlinClient constructor overload
@@ -90,3 +109,4 @@ public static class ServiceCollectionExtensions
         return services;
     }
 }
+#pragma warning restore CS1591
