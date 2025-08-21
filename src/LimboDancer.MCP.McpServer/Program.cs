@@ -14,6 +14,7 @@ using LimboDancer.MCP.Ontology.Validation;
 using LimboDancer.MCP.Storage;
 using LimboDancer.MCP.Vector.AzureSearch;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 using ModelContextProtocol.Protocol;
 using System.Linq;
 using System.Text.Json;
@@ -26,7 +27,6 @@ var config = builder.Configuration;
 // Options
 services.Configure<TenancyOptions>(config.GetSection("Tenancy"));
 services.Configure<VectorOptions>(config.GetSection("Vector"));
-services.Configure<GraphOptions>(config.GetSection("Graph"));
 
 // Tenancy
 services.AddHttpContextAccessor();
@@ -40,10 +40,15 @@ services.AddOntologyRuntime(config);
 services.AddStorage(config);
 
 // Graph
-services.AddSingleton(sp =>
+services.AddCosmosGremlin(config, "Graph");
+services.AddScoped<GraphStore>(sp =>
 {
-    var opts = sp.GetRequiredService<Microsoft.Extensions.Options.IOptions<GraphOptions>>().Value;
-    return new GraphStore(opts.Endpoint, opts.Database, opts.Graph, opts.AuthKey);
+    var clientFactory = sp.GetRequiredService<IGremlinClientFactory>();
+    var tenantAccessor = sp.GetRequiredService<ITenantAccessor>();
+    var loggerFactory = sp.GetRequiredService<ILoggerFactory>();
+    
+    var client = clientFactory.Create();
+    return new GraphStore(client, tenantAccessor, loggerFactory);
 });
 services.AddScoped<GraphPreconditionsService>();   // flows TenantScope into preconditions
 services.AddScoped<GraphEffectsService>();         // flows TenantScope into effects
@@ -255,4 +260,3 @@ app.Run();
 
 // Options records
 internal sealed record VectorOptions(string Endpoint = "", string ApiKey = "", string IndexName = "mcp-memory", int VectorDimensions = 1536);
-internal sealed record GraphOptions(string Endpoint = "", string Database = "", string Graph = "", string AuthKey = "");
