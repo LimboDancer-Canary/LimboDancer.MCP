@@ -1,8 +1,11 @@
 ﻿#pragma warning disable CS1591 // Missing XML comment for publicly visible type or member
-using System.ComponentModel;
 
 namespace LimboDancer.MCP.Graph.CosmosGremlin;
 
+/// <summary>
+/// Configuration options for Gremlin clients.
+/// Note: Obsolete alias properties (UseSsl, PrimaryKey, Serializer) have been removed.
+/// </summary>
 public sealed class GremlinOptions
 {
     /// <summary>Cosmos DB Gremlin host. Example: your-account.gremlin.cosmos.azure.com</summary>
@@ -14,15 +17,6 @@ public sealed class GremlinOptions
     /// <summary>Use TLS for Cosmos (true)</summary>
     public bool EnableSsl { get; set; } = true;
 
-    /// <summary>Whether to use TLS.</summary>
-    [Obsolete("Use EnableSsl instead. This property will be removed in a future version.")]
-    [EditorBrowsable(EditorBrowsableState.Never)]
-    public bool UseSsl 
-    { 
-        get => EnableSsl; 
-        set => EnableSsl = value; 
-    }
-
     /// <summary>Cosmos DB database (a.k.a. database/graph account db)</summary>
     public string Database { get; set; } = string.Empty;
 
@@ -31,15 +25,6 @@ public sealed class GremlinOptions
 
     /// <summary>Primary (or secondary) key</summary>
     public string AuthKey { get; set; } = string.Empty;
-
-    /// <summary>Primary (or secondary) key</summary>
-    [Obsolete("Use AuthKey instead. This property will be removed in a future version.")]
-    [EditorBrowsable(EditorBrowsableState.Never)]
-    public string PrimaryKey 
-    { 
-        get => AuthKey; 
-        set => AuthKey = value; 
-    }
 
     /// <summary>Pool size for underlying WebSocket connections</summary>
     public int ConnectionPoolSize { get; set; } = 8;
@@ -53,14 +38,7 @@ public sealed class GremlinOptions
     /// <summary>Request serializer version; Cosmos Gremlin API supports GraphSON 2.x</summary>
     public GraphSonVersion GraphSONVersion { get; set; } = GraphSonVersion.GraphSON2;
 
-    /// <summary>Request serializer version; Cosmos Gremlin API supports GraphSON 2.x</summary>
-    [Obsolete("Use GraphSONVersion instead. This property will be removed in a future version.")]
-    [EditorBrowsable(EditorBrowsableState.Never)]
-    public GraphSonVersion Serializer 
-    { 
-        get => GraphSONVersion; 
-        set => GraphSONVersion = value; 
-    }
+
 
     /// <summary>
     /// Validates the options for basic correctness.
