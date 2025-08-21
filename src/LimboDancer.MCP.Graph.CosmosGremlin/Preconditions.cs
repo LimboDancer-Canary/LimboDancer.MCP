@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using Gremlin.Net.Driver;
@@ -34,7 +35,7 @@ namespace LimboDancer.MCP.Graph.CosmosGremlin
             };
 
             var result = await _client.SubmitAsync<long>(query, bindings, cancellationToken: ct).ConfigureAwait(false);
-            var count = FirstOrDefault(result);
+            var count = result.FirstOrDefault();
             return count > 0;
         }
 
@@ -58,45 +59,8 @@ namespace LimboDancer.MCP.Graph.CosmosGremlin
             };
 
             var result = await _client.SubmitAsync<long>(query, bindings, cancellationToken: ct).ConfigureAwait(false);
-            var count = FirstOrDefault(result);
+            var count = result.FirstOrDefault();
             return count > 0;
-        }
-
-        public async Task<bool> HasPropertyAsync(string localId, string key, object? value, CancellationToken ct = default)
-        {
-            GraphWriteHelpers.ValidatePropertyKey(key);
-            var tenantId = _getTenantId();
-            var vid = GraphWriteHelpers.ToVertexId(tenantId, localId);
-
-            string query;
-            var bindings = new Dictionary<string, object>
-            {
-                ["vid"] = vid,
-                ["tid"] = tenantId,
-                ["tprop"] = GraphWriteHelpers.TenantPropertyName,
-                ["k"] = key
-            };
-
-            if (value is null)
-            {
-                // Property exists regardless of value
-                query = "g.V(vid).has(tprop, tid).properties(k).limit(1).count()";
-            }
-            else
-            {
-                query = "g.V(vid).has(tprop, tid).has(k, v).limit(1).count()";
-                bindings["v"] = value;
-            }
-
-            var result = await _client.SubmitAsync<long>(query, bindings, cancellationToken: ct).ConfigureAwait(false);
-            var count = FirstOrDefault(result);
-            return count > 0;
-        }
-
-        private static T FirstOrDefault<T>(IReadOnlyCollection<T> results)
-        {
-            foreach (var r in results) return r;
-            return default!;
         }
     }
 }

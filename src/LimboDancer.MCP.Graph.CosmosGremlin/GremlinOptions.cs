@@ -1,4 +1,6 @@
-﻿namespace LimboDancer.MCP.Graph.CosmosGremlin;
+using System;
+
+namespace LimboDancer.MCP.Graph.CosmosGremlin;
 
 public sealed class GremlinOptions
 {
@@ -9,7 +11,11 @@ public sealed class GremlinOptions
     public int Port { get; set; } = 443;
 
     /// <summary>Whether to use TLS.</summary>
-    public bool UseSsl { get; set; } = true;
+    public bool EnableSsl { get; set; } = true;
+
+    /// <summary>Deprecated alias for EnableSsl.</summary>
+    [Obsolete("Use EnableSsl instead. This alias will be removed in a future version.")]
+    public bool UseSsl { get => EnableSsl; set => EnableSsl = value; }
 
     /// <summary>Auth key (Cosmos primary key).</summary>
     public string AuthKey { get; set; } = string.Empty;
