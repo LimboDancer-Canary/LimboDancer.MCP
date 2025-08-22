@@ -1,4 +1,4 @@
-﻿using Gremlin.Net.Driver;
+﻿//file: /src/LimboDancer.MCP.McpServer/Program.cs
 using LimboDancer.MCP.Core.Tenancy;
 using LimboDancer.MCP.Graph.CosmosGremlin;
 using LimboDancer.MCP.McpServer.DependencyInjection;
@@ -8,6 +8,7 @@ using LimboDancer.MCP.McpServer.Tenancy;
 using LimboDancer.MCP.McpServer.Tools;
 using LimboDancer.MCP.McpServer.Vector;
 using LimboDancer.MCP.Ontology.Export;
+using LimboDancer.MCP.Ontology.Mapping;
 using LimboDancer.MCP.Ontology.Repositories;
 using LimboDancer.MCP.Ontology.Runtime;
 using LimboDancer.MCP.Ontology.Store;
@@ -15,6 +16,7 @@ using LimboDancer.MCP.Storage;
 using LimboDancer.MCP.Vector.AzureSearch;
 using Microsoft.EntityFrameworkCore;
 using LimboDancer.MCP.Ontology.Validation;
+using IGraphPreconditionsService = LimboDancer.MCP.McpServer.Graph.IGraphPreconditionsService;
 using ITenantScopeAccessor = LimboDancer.MCP.McpServer.Tenancy.ITenantScopeAccessor;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -34,21 +36,22 @@ services.AddScoped<ITenantScopeAccessor, TenantScopeAccessor>();
 // Ontology runtime
 services.AddOntologyRuntime(config);
 
+// Property key mapper (required by GraphPreconditionsService)
+services.AddSingleton<IPropertyKeyMapper, DefaultPropertyKeyMapper>();
+
 // Storage
 services.AddStorage(config);
 
-// Graph
-// (Assumes a Gremlin client factory or similar already registered elsewhere; adjust as needed)
-services.AddSingleton(sp =>
-{
-    // Acquire or build the Gremlin client (placeholder; replace with actual retrieval)
-    var gremlinClient = sp.GetRequiredService<IGremlinClient>();
-    var tenantAccessor = sp.GetRequiredService<ITenantAccessor>();
-    var loggerFactory = sp.GetRequiredService<ILoggerFactory>();
-    return new GraphStore(gremlinClient, tenantAccessor, loggerFactory);
-});
+// Graph - Fixed to use the extension method properly
+services.AddCosmosGremlinGraph(config);
+
+// Register IGraphStore implementation
+services.AddScoped<IGraphStore, TenantScopedGraphStore>();
 services.AddScoped<GraphPreconditionsService>();
 services.AddScoped<GraphEffectsService>();
+services.AddScoped<IGraphEffectsService>(sp => sp.GetRequiredService<GraphEffectsService>());
+services.AddScoped<IGraphPreconditionsService>(sp => sp.GetRequiredService<GraphPreconditionsService>());
+services.AddScoped<IGraphQueryStore, GraphQueryStore>();
 
 // Vector store
 services.AddSingleton(sp =>
@@ -69,6 +72,7 @@ services.AddScoped<HistoryGetTool>();
 services.AddScoped<HistoryAppendTool>();
 services.AddScoped<GraphQueryTool>();
 services.AddScoped<MemorySearchTool>();
+
 var app = builder.Build();
 
 // Health endpoints
@@ -122,8 +126,8 @@ app.MapGet("/api/ontology/validate", async (HttpContext http, IOntologyRepositor
         return Results.Ok(new
         {
             scope = scope.ToString(),
-            isValid = validation.Count == 0,
-            errors = validation
+            isValid = validation.Errors.Count == 0,
+            errors = validation.Errors
         });
     }
     catch (TenantScopeException ex)
@@ -225,3 +229,17 @@ app.Run();
 
 // Request DTOs
 public record OntologyValidationRequest(string TenantId, string PackageId, string ChannelId);
+
+// Options classes
+public sealed class VectorOptions
+{
+    public string Endpoint { get; set; } = string.Empty;
+    public string ApiKey { get; set; } = string.Empty;
+    public string IndexName { get; set; } = "ldm-memory";
+    public int VectorDimensions { get; set; } = 1536;
+}
+
+public sealed class GraphOptions
+{
+    // Any graph-specific options can go here
+}

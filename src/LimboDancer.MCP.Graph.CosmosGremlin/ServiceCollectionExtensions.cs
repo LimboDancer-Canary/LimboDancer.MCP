@@ -22,6 +22,8 @@ public static class ServiceCollectionExtensions
     {
         services.Configure<GremlinOptions>(config.GetSection(sectionName));
         services.AddSingleton<IGremlinClientFactory, GremlinClientFactory>();
+        services.AddSingleton<IGremlinClient>(sp =>
+            sp.GetRequiredService<IGremlinClientFactory>().Create());
         return services;
     }
 

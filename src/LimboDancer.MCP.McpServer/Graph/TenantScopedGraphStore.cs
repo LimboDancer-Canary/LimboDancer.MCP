@@ -1,28 +1,35 @@
-﻿namespace LimboDancer.MCP.McpServer.Graph
+﻿using LimboDancer.MCP.Core.Tenancy;
+using LimboDancer.MCP.Graph.CosmosGremlin;
+using Microsoft.Extensions.Logging;
+
+namespace LimboDancer.MCP.McpServer.Graph
 {
     public sealed class TenantScopedGraphStore : IGraphStore
     {
-        private readonly IGraphStore _inner;
-        private readonly ITenantScopeAccessor _scope;
+        private readonly GraphStore _inner;
+        private readonly ITenantAccessor _tenant;
         private readonly ILogger<TenantScopedGraphStore> _log;
 
-        public TenantScopedGraphStore(IGraphStore inner, ITenantScopeAccessor scope, ILogger<TenantScopedGraphStore> log)
+        public TenantScopedGraphStore(GraphStore inner, ITenantAccessor tenant, ILogger<TenantScopedGraphStore> log)
         {
             _inner = inner ?? throw new ArgumentNullException(nameof(inner));
-            _scope = scope ?? throw new ArgumentNullException(nameof(scope));
+            _tenant = tenant ?? throw new ArgumentNullException(nameof(tenant));
             _log = log ?? throw new ArgumentNullException(nameof(log));
         }
 
-        public Task UpsertVertexPropertyAsync(string vertexId, string propertyKey, object? value, string? tenantId, CancellationToken ct)
-            => _inner.UpsertVertexPropertyAsync(vertexId, propertyKey, value, RequireTenant(tenantId), ct);
+        public Task UpsertVertexPropertyAsync(string localId, string propertyKey, object? value, Guid? tenantIdOverride, CancellationToken ct)
+            => _inner.UpsertVertexPropertyAsync(localId, propertyKey, value, RequireTenant(tenantIdOverride), ct);
 
-        public Task UpsertEdgeAsync(string sourceVertexId, string targetVertexId, string edgeLabel, IDictionary<string, object?>? edgeProperties, string? tenantId, CancellationToken ct)
-            => _inner.UpsertEdgeAsync(sourceVertexId, targetVertexId, edgeLabel, edgeProperties, RequireTenant(tenantId), ct);
+        public Task UpsertEdgeAsync(string sourceVertexId, string targetVertexId, string edgeLabel, IDictionary<string, object?>? edgeProperties, Guid? tenantIdOverride, CancellationToken ct)
+            => _inner.UpsertEdgeAsync(sourceVertexId, targetVertexId, edgeLabel, edgeProperties, RequireTenant(tenantIdOverride), ct);
 
-        private string RequireTenant(string? provided)
+        public Task<string?> GetVertexPropertyAsync(string localId, string propertyKey, CancellationToken ct)
+            => _inner.GetVertexPropertyAsync(localId, propertyKey, ct);
+
+        private Guid RequireTenant(Guid? provided)
         {
-            var effective = string.IsNullOrWhiteSpace(provided) ? _scope.GetCurrentScope().TenantId : provided!;
-            if (string.IsNullOrWhiteSpace(effective))
+            var effective = provided ?? _tenant.TenantId;
+            if (effective == Guid.Empty)
             {
                 _log.LogError("TenantScopedGraphStore: missing TenantId for graph mutation.");
                 throw new InvalidOperationException("TenantId is required for graph mutations.");
