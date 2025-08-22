@@ -7,26 +7,26 @@ public static class OntologyValidationServiceRegistration
 {
     public static IServiceCollection AddOntologyValidationService(
         this IServiceCollection services,
-        IConfiguration config,
+        IConfiguration configuration,
         string sectionName = "OntologyApi")
     {
-        services.Configure<OntologyApiOptions>(config.GetSection(sectionName));
+        services
+            .AddOptions<OntologyApiOptions>()
+            .Bind(configuration.GetSection(sectionName))
+            .Validate(o => !string.IsNullOrWhiteSpace(o.BaseUrl), $"{sectionName}:BaseUrl is required.")
+            .Validate(o => !string.IsNullOrWhiteSpace(o.TenantHeaderName), $"{sectionName}:TenantHeaderName is required.")
+            .Validate(o => o.TimeoutSeconds is >= 2 and <= 60, $"{sectionName}:TimeoutSeconds must be between 2 and 60.")
+            .ValidateOnStart();
 
-        // Validate options early
-        using var sp = services.BuildServiceProvider();
-        var tmp = sp.GetRequiredService<IOptions<OntologyApiOptions>>().Value;
-        if (string.IsNullOrWhiteSpace(tmp.BaseUrl))
-            throw new InvalidOperationException($"Configuration '{sectionName}:BaseUrl' is required for Ontology API.");
-
-        services.AddHttpClient(OntologyValidationService.HttpClientName, (provider, http) =>
-        {
-            var opts = provider.GetRequiredService<IOptions<OntologyApiOptions>>().Value;
-
-            http.BaseAddress = new Uri(opts.BaseUrl!, UriKind.Absolute);
-            http.Timeout = TimeSpan.FromSeconds(Math.Clamp(opts.TimeoutSeconds, 2, 60));
-            http.DefaultRequestHeaders.Accept.Clear();
-            http.DefaultRequestHeaders.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
-        });
+        services.AddHttpClient(OntologyValidationService.HttpClientName, (sp, http) =>
+            {
+                var opts = sp.GetRequiredService<IOptions<OntologyApiOptions>>().Value;
+                http.BaseAddress = new Uri(opts.BaseUrl!, UriKind.Absolute);
+                http.Timeout = TimeSpan.FromSeconds(Math.Clamp(opts.TimeoutSeconds, 2, 60));
+                http.DefaultRequestHeaders.Accept.Clear();
+                http.DefaultRequestHeaders.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
+            })
+            .AddHttpMessageHandler<TenantHeaderHandler>();
 
         services.AddScoped<IOntologyValidationService, OntologyValidationService>();
         return services;
