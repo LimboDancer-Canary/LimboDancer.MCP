@@ -413,22 +413,23 @@ A PowerShell script (`scripts\bootstrap.ps1`) creates the complete solution stru
 ### Milestones
 
 #### Alpha Phase (Milestones 1-3)
-- **Milestone 1 – MCP Skeleton**: Scaffold solution, implement MCP server with stdio + noop tool
-- **Milestone 2 – Persistence**: EF Core + PostgreSQL, basic history persistence
-- **Milestone 3 – Embeddings and Vector Store**: Azure OpenAI integration, hybrid retrieval
+- ✅ **Milestone 1 – MCP Skeleton**: Scaffold solution, implement MCP server with stdio + noop tool
+- ✅ **Milestone 2 – Persistence**: EF Core + PostgreSQL, basic history persistence
+- ✅ **Milestone 3 – Embeddings and Vector Store**: Azure OpenAI integration, hybrid retrieval
 
-#### Beta Phase (Milestones 4-8)
-- **Milestone 4 – Ontology v1**: JSON-LD context, base classes, tool schema mapping
-- **Milestone 5 – Planner + Precondition/Effect Checks**: Typed ReAct loop, KG validation
-- **Milestone 6 – Knowledge Graph Integration**: Cosmos DB Gremlin, context expansion
-- **Milestone 7 – Ingestion Pipeline**: Event-driven document processing
-- **Milestone 8 – HTTP Transport**: Streamable HTTP endpoints, Entra ID auth
+#### Beta Phase (Milestones 4-9)
+- ✅ **Milestone 4 – Ontology v1**: JSON-LD context, base classes, tool schema mapping
+- ✅ **Milestone 5 – Planner + Precondition/Effect Checks**: Typed ReAct loop, KG validation
+- ✅ **Milestone 6 – Knowledge Graph Integration**: Cosmos DB Gremlin, context expansion
+- ✅ **Milestone 7 – Ingestion Pipeline**: Event-driven document processing
+- ✅ **Milestone 8 – HTTP Transport**: Streamable HTTP endpoints, Entra ID auth
+- **Milestone 9 – Hardening and Unit Tests**: Testing and debugging
 
-#### 1.0 Release (Milestones 9-12)
-- **Milestone 9 – Blazor Server Operator Console**: Admin dashboards
-- **Milestone 10 – Multi-tenant hardening**: Full isolation across all components
-- **Milestone 11 – Observability & Governance**: OTEL traces, SHACL validators
-- **Milestone 12 – Packaging & 1.0 Release**: Containers, CI/CD, documentation
+#### 1.0 Release (Milestones 10-13)
+- **Milestone 10 – Blazor Server Operator Console**: Admin dashboards
+- **Milestone 11 – Multi-tenant hardening**: Proven isolation across all components
+- **Milestone 12 – Observability & Governance**: OTEL traces, SHACL validators
+- **Milestone 13 – Packaging & 1.0 Release**: Containers, CI/CD, documentation
 
 ---
 
