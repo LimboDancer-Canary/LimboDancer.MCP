@@ -112,6 +112,29 @@ az rest --method PATCH \
       ]
     }')" >/dev/null
 
+# Configure optional claims to include tenant_id in tokens
+echo "Configuring optional claims for tenant_id"
+az rest --method PATCH \
+  --url "https://graph.microsoft.com/v1.0/applications/$API_OBJECT_ID" \
+  --body '{
+    "optionalClaims": {
+      "idToken": [
+        {
+          "name": "tenant_id",
+          "source": "tenant",
+          "essential": false
+        }
+      ],
+      "accessToken": [
+        {
+          "name": "tenant_id",
+          "source": "tenant",
+          "essential": false
+        }
+      ]
+    }
+  }' >/dev/null
+
 # Ensure the service principal exists
 echo "Creating API service principal (if not present)"
 az ad sp create --id "$API_APP_ID" >/dev/null || true
@@ -137,6 +160,29 @@ CLIENT_OBJECT_ID=$(echo "$CLIENT_CREATE_JSON" | jq -r '.id')
 echo "Client app created:"
 echo "  appId:    $CLIENT_APP_ID"
 echo "  objectId: $CLIENT_OBJECT_ID"
+
+# Configure optional claims for client app
+echo "Configuring optional claims for client tenant_id"
+az rest --method PATCH \
+  --url "https://graph.microsoft.com/v1.0/applications/$CLIENT_OBJECT_ID" \
+  --body '{
+    "optionalClaims": {
+      "idToken": [
+        {
+          "name": "tenant_id",
+          "source": "tenant",
+          "essential": false
+        }
+      ],
+      "accessToken": [
+        {
+          "name": "tenant_id",
+          "source": "tenant",
+          "essential": false
+        }
+      ]
+    }
+  }' >/dev/null
 
 # Create client secret
 echo "Creating client secret (capture and store securely)"
@@ -177,26 +223,36 @@ cat <<EOF
 
 Done.
 
-Values to copy into your code:
+Values to copy into your appsettings.json files:
 
-BlazorConsole appsettings.Development.json
------------------------------------------
-AzureAd:
-  Instance: https://login.microsoftonline.com/
-  TenantId: $TENANT_ID
-  ClientId: $CLIENT_APP_ID
-  ClientSecret: $CLIENT_SECRET_VALUE
-  CallbackPath: /signin-oidc
+Common Authentication Settings
+------------------------------
+TenantId: $TENANT_ID
 
-DownstreamApi.McpApi:
-  BaseUrl: $API_HTTPS_BASE
-  Scopes:  ["api://$API_APP_ID/Mcp.Access"]
+BlazorConsole appsettings.json
+------------------------------
+"AzureAd": {
+  "Instance": "https://login.microsoftonline.com/",
+  "TenantId": "$TENANT_ID",
+  "ClientId": "$CLIENT_APP_ID",
+  "ClientSecret": "$CLIENT_SECRET_VALUE",
+  "CallbackPath": "/signin-oidc"
+},
+"DownstreamApi": {
+  "McpApi": {
+    "BaseUrl": "$API_HTTPS_BASE",
+    "Scopes": ["api://$API_APP_ID/Mcp.Access"]
+  }
+}
 
-API (McpServer.Http) appsettings.Development.json
--------------------------------------------------
-Authentication.Jwt:
-  Authority: https://login.microsoftonline.com/$TENANT_ID/v2.0
-  Audience:  $API_APP_ID
+API (McpServer.Http) appsettings.json
+-------------------------------------
+"Authentication": {
+  "Jwt": {
+    "Authority": "https://login.microsoftonline.com/$TENANT_ID/v2.0",
+    "Audience": "$API_APP_ID"
+  }
+}
 
 Role IDs (for automation, optional)
 -----------------------------------
@@ -210,6 +266,7 @@ Notes:
   $( $ADD_IIS_EXPRESS_REDIRECT && echo "  - $BLAZOR_CONSOLE_IIS_EXPRESS_HTTPS/signin-oidc" )
 - Front-channel logout:
   - $BLAZOR_CONSOLE_HTTPS/signout-oidc
+- Tokens will include 'tenant_id' claim (in addition to standard 'tid')
 - If you assign roles to users, do it in Enterprise applications → $API_APP_NAME → Users and groups → Add user → pick role(s).
 
 EOF
