@@ -10,10 +10,10 @@ namespace LimboDancer.MCP.Graph.CosmosGremlin
     public sealed class Preconditions
     {
         private readonly IGremlinClient _client;
-        private readonly Func<string> _getTenantId;
+        private readonly Func<Guid> _getTenantId;
         private readonly ILogger<Preconditions> _logger;
 
-        public Preconditions(IGremlinClient client, Func<string> getTenantId, ILogger<Preconditions> logger)
+        public Preconditions(IGremlinClient client, Func<Guid> getTenantId, ILogger<Preconditions> logger)
         {
             _client = client ?? throw new ArgumentNullException(nameof(client));
             _getTenantId = getTenantId ?? throw new ArgumentNullException(nameof(getTenantId));
@@ -29,7 +29,7 @@ namespace LimboDancer.MCP.Graph.CosmosGremlin
             var bindings = new Dictionary<string, object>
             {
                 ["vid"] = vid,
-                ["tid"] = tenantId,
+                ["tid"] = tenantId.ToString("D"),
                 ["tprop"] = GraphWriteHelpers.TenantPropertyName
             };
 
@@ -53,7 +53,7 @@ namespace LimboDancer.MCP.Graph.CosmosGremlin
                 ["outId"] = outId,
                 ["inId"] = inId,
                 ["lbl"] = label,
-                ["tid"] = tenantId,
+                ["tid"] = tenantId.ToString("D"),
                 ["tprop"] = GraphWriteHelpers.TenantPropertyName
             };
 
@@ -72,7 +72,7 @@ namespace LimboDancer.MCP.Graph.CosmosGremlin
             var bindings = new Dictionary<string, object>
             {
                 ["vid"] = vid,
-                ["tid"] = tenantId,
+                ["tid"] = tenantId.ToString("D"),
                 ["tprop"] = GraphWriteHelpers.TenantPropertyName,
                 ["k"] = key
             };

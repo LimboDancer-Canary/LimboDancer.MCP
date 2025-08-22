@@ -9,21 +9,21 @@ namespace LimboDancer.MCP.Graph.CosmosGremlin
         public const string IdPropertyName = "id";
         private const string VertexIdSeparator = "::";
 
-        public static string ToVertexId(string tenantId, string localId)
+        public static string ToVertexId(Guid tenantId, string localId)
         {
-            if (string.IsNullOrWhiteSpace(tenantId)) throw new ArgumentException("TenantId is required.", nameof(tenantId));
+            if (tenantId == Guid.Empty) throw new ArgumentException("TenantId cannot be empty.", nameof(tenantId));
             if (string.IsNullOrWhiteSpace(localId)) throw new ArgumentException("LocalId is required.", nameof(localId));
-            return $"{tenantId}{VertexIdSeparator}{localId}";
+            return $"{tenantId:D}{VertexIdSeparator}{localId}";
         }
 
-        public static string GetLocalId(string tenantAwareVertexId, string expectedTenantId)
+        public static string GetLocalId(string tenantAwareVertexId, Guid expectedTenantId)
         {
             if (!TryParseTenantFromVertexId(tenantAwareVertexId, out var tenant, out var local))
             {
                 throw new ArgumentException("Invalid vertex id format.", nameof(tenantAwareVertexId));
             }
 
-            if (!string.Equals(tenant, expectedTenantId, StringComparison.Ordinal))
+            if (tenant != expectedTenantId)
             {
                 throw new InvalidOperationException("Vertex id does not belong to the expected tenant.");
             }
@@ -31,32 +31,33 @@ namespace LimboDancer.MCP.Graph.CosmosGremlin
             return local!;
         }
 
-        public static bool TryParseTenantFromVertexId(string vertexId, out string tenantId, out string localId)
+        public static bool TryParseTenantFromVertexId(string vertexId, out Guid tenantId, out string localId)
         {
-            tenantId = "";
+            tenantId = Guid.Empty;
             localId = "";
             if (string.IsNullOrWhiteSpace(vertexId)) return false;
             var idx = vertexId.IndexOf(VertexIdSeparator, StringComparison.Ordinal);
             if (idx <= 0) return false;
-            tenantId = vertexId.Substring(0, idx);
+            var tenantStr = vertexId.Substring(0, idx);
+            if (!Guid.TryParse(tenantStr, out tenantId)) return false;
             localId = vertexId[(idx + VertexIdSeparator.Length)..];
-            return !string.IsNullOrWhiteSpace(tenantId) && !string.IsNullOrWhiteSpace(localId);
+            return !string.IsNullOrWhiteSpace(localId);
         }
 
-        public static void EnsureTenantMatches(string tenantId, string vertexId)
+        public static void EnsureTenantMatches(Guid tenantId, string vertexId)
         {
             if (!TryParseTenantFromVertexId(vertexId, out var t, out _))
             {
                 throw new ArgumentException("Vertex id is malformed.", nameof(vertexId));
             }
 
-            if (!string.Equals(t, tenantId, StringComparison.Ordinal))
+            if (t != tenantId)
             {
                 throw new InvalidOperationException("Cross-tenant access detected.");
             }
         }
 
-        public static IDictionary<string, object> WithTenantProperty(IDictionary<string, object>? properties, string tenantId)
+        public static IDictionary<string, object> WithTenantProperty(IDictionary<string, object>? properties, Guid tenantId)
         {
             var result = new Dictionary<string, object>(StringComparer.Ordinal);
             if (properties != null)
@@ -69,7 +70,7 @@ namespace LimboDancer.MCP.Graph.CosmosGremlin
                 }
             }
 
-            result[TenantPropertyName] = tenantId;
+            result[TenantPropertyName] = tenantId.ToString("D");
             return result;
         }
 

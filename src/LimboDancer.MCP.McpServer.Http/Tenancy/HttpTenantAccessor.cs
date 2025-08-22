@@ -13,7 +13,6 @@ namespace LimboDancer.MCP.McpServer.Http.Tenancy
     {
         private const string TenantClaimType = "tenant_id";
         private const string DeprecatedTenantClaimType = "tid";
-        // Removed local TenantHeaderName constant; use TenantHeaders.TenantId
         private const string HttpItemsKey = "__mcp_tenant_id";
 
         private readonly IHttpContextAccessor _httpContextAccessor;
@@ -33,9 +32,9 @@ namespace LimboDancer.MCP.McpServer.Http.Tenancy
             _logger = logger ?? throw new ArgumentNullException(nameof(logger));
         }
 
-        private bool IsDevelopment => _environment.IsDevelopment();
+        public bool IsDevelopment => _environment.IsDevelopment();
 
-        public string TenantId
+        public Guid TenantId
         {
             get
             {
@@ -43,30 +42,27 @@ namespace LimboDancer.MCP.McpServer.Http.Tenancy
                     ?? throw new InvalidOperationException("No active HTTP context is available to resolve the tenant.");
 
                 if (httpContext.Items.TryGetValue(HttpItemsKey, out var cached) &&
-                    cached is string cachedTenant &&
-                    !string.IsNullOrWhiteSpace(cachedTenant))
+                    cached is Guid cachedGuid)
                 {
-                    return cachedTenant;
+                    return cachedGuid;
                 }
 
                 var user = httpContext.User;
                 var tenantFromClaim = user?.FindFirstValue(TenantClaimType);
-                if (!string.IsNullOrWhiteSpace(tenantFromClaim))
+                if (!string.IsNullOrWhiteSpace(tenantFromClaim) && Guid.TryParse(tenantFromClaim, out var guid))
                 {
-                    tenantFromClaim = tenantFromClaim!.Trim();
-                    httpContext.Items[HttpItemsKey] = tenantFromClaim;
+                    httpContext.Items[HttpItemsKey] = guid;
                     _logger.LogDebug("Resolved tenant from claim '{ClaimType}'.", TenantClaimType);
-                    return tenantFromClaim;
+                    return guid;
                 }
 
                 var deprecatedClaim = user?.FindFirstValue(DeprecatedTenantClaimType);
-                if (!string.IsNullOrWhiteSpace(deprecatedClaim))
+                if (!string.IsNullOrWhiteSpace(deprecatedClaim) && Guid.TryParse(deprecatedClaim, out var deprecatedGuid))
                 {
-                    deprecatedClaim = deprecatedClaim!.Trim();
-                    httpContext.Items[HttpItemsKey] = deprecatedClaim;
+                    httpContext.Items[HttpItemsKey] = deprecatedGuid;
                     _logger.LogWarning("Resolved tenant from deprecated claim '{ClaimType}'. Preferred: '{Preferred}'.",
                         DeprecatedTenantClaimType, TenantClaimType);
-                    return deprecatedClaim;
+                    return deprecatedGuid;
                 }
 
                 if (IsDevelopment)
@@ -74,20 +70,20 @@ namespace LimboDancer.MCP.McpServer.Http.Tenancy
                     if (httpContext.Request.Headers.TryGetValue(TenantHeaders.TenantId, out var headerValues))
                     {
                         var tenantFromHeader = headerValues.FirstOrDefault()?.Trim();
-                        if (!string.IsNullOrWhiteSpace(tenantFromHeader))
+                        if (!string.IsNullOrWhiteSpace(tenantFromHeader) && Guid.TryParse(tenantFromHeader, out var headerGuid))
                         {
-                            httpContext.Items[HttpItemsKey] = tenantFromHeader!;
+                            httpContext.Items[HttpItemsKey] = headerGuid;
                             _logger.LogWarning("Resolved tenant from header '{Header}' in Development.", TenantHeaders.TenantId);
-                            return tenantFromHeader!;
+                            return headerGuid;
                         }
                     }
 
                     var tenantFromConfig = _configuration["Tenancy:DefaultTenantId"]?.Trim();
-                    if (!string.IsNullOrWhiteSpace(tenantFromConfig))
+                    if (!string.IsNullOrWhiteSpace(tenantFromConfig) && Guid.TryParse(tenantFromConfig, out var configGuid))
                     {
-                        httpContext.Items[HttpItemsKey] = tenantFromConfig!;
+                        httpContext.Items[HttpItemsKey] = configGuid;
                         _logger.LogWarning("Resolved tenant from configuration key 'Tenancy:DefaultTenantId' in Development.");
-                        return tenantFromConfig!;
+                        return configGuid;
                     }
                 }
 

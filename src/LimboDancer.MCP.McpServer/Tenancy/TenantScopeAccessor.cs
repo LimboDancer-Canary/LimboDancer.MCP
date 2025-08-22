@@ -25,7 +25,7 @@ public sealed class TenantScopeAccessor : ITenantScopeAccessor
 
     public TenantScope GetCurrentScope()
     {
-        var tenantId = _tenantAccessor.TenantId;
+        var tenantId = _tenantAccessor.TenantId.ToString();
         var ctx = _http.HttpContext;
         var headers = ctx?.Request?.Headers;
 

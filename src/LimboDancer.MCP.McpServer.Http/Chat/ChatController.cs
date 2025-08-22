@@ -22,7 +22,8 @@ public sealed class ChatController : ControllerBase
     [HttpPost("sessions")]
     public async Task<ActionResult<CreateSessionResponse>> CreateSession([FromRoute] string tenantId, [FromBody] CreateSessionRequest req, CancellationToken ct)
     {
-        if (tenantId != _tenant.TenantId) return Forbid();
+        if (!Guid.TryParse(tenantId, out var routeTenantId) || routeTenantId != _tenant.TenantId)
+            return Forbid();
         var sessionId = await _orchestrator.CreateSessionAsync(tenantId, req.SystemPrompt, ct);
         return Ok(new CreateSessionResponse(sessionId));
     }
@@ -30,7 +31,8 @@ public sealed class ChatController : ControllerBase
     [HttpGet("sessions/{sessionId}/history")]
     public async Task<ActionResult<object>> GetHistory([FromRoute] string tenantId, [FromRoute] string sessionId, CancellationToken ct)
     {
-        if (tenantId != _tenant.TenantId) return Forbid();
+        if (!Guid.TryParse(tenantId, out var routeTenantId) || routeTenantId != _tenant.TenantId)
+            return Forbid();
         var history = await _orchestrator.GetHistoryAsync(tenantId, sessionId, ct);
         return Ok(history);
     }
@@ -38,7 +40,8 @@ public sealed class ChatController : ControllerBase
     [HttpPost("sessions/{sessionId}/messages")]
     public async Task<ActionResult<PostMessageResponse>> PostMessage([FromRoute] string tenantId, [FromRoute] string sessionId, [FromBody] PostMessageRequest req, CancellationToken ct)
     {
-        if (tenantId != _tenant.TenantId) return Forbid();
+        if (!Guid.TryParse(tenantId, out var routeTenantId) || routeTenantId != _tenant.TenantId)
+            return Forbid();
         var correlationId = await _orchestrator.EnqueueUserMessageAsync(tenantId, sessionId, req.Role, req.Content, ct);
         return Accepted(new PostMessageResponse(correlationId));
     }
