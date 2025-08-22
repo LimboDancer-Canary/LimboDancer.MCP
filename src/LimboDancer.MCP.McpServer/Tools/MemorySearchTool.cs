@@ -1,107 +1,141 @@
 using LimboDancer.MCP.Core.Tenancy;
 using LimboDancer.MCP.Vector.AzureSearch;
-using ModelContextProtocol.Protocol;
-using System.Net.Mail;
+using Microsoft.Extensions.Logging;
 using System.Text.Json;
-using System.Text.Json.Nodes;
+using System.Text.Json.Serialization;
 
 namespace LimboDancer.MCP.McpServer.Tools;
 
-public sealed class MemorySearchTool : IMcpTool
+public sealed class MemorySearchInput
 {
-    public string Name => "memory.search";
-    public Tool ToolDescriptor { get; }
+    [JsonPropertyName("queryText")] public string? QueryText { get; set; }
+    [JsonPropertyName("vectorBase64")] public string? VectorBase64 { get; set; }
+    [JsonPropertyName("k")] public int K { get; set; } = 8;
+    [JsonPropertyName("ontologyClass")] public string? OntologyClass { get; set; }
+    [JsonPropertyName("uriEquals")] public string? UriEquals { get; set; }
+    [JsonPropertyName("tagsAny")] public List<string>? TagsAny { get; set; }
+}
 
+public sealed class MemorySearchOutput
+{
+    [JsonPropertyName("tenantId")] public string TenantId { get; set; } = default!;
+    [JsonPropertyName("count")] public int Count { get; set; }
+    [JsonPropertyName("items")] public List<MemorySearchItem> Items { get; set; } = new();
+}
+
+public sealed class MemorySearchItem
+{
+    [JsonPropertyName("id")] public string Id { get; set; } = default!;
+    [JsonPropertyName("title")] public string? Title { get; set; }
+    [JsonPropertyName("source")] public string? Source { get; set; }
+    [JsonPropertyName("chunk")] public int? Chunk { get; set; }
+    [JsonPropertyName("ontologyClass")] public string? OntologyClass { get; set; }
+    [JsonPropertyName("uri")] public string? Uri { get; set; }
+    [JsonPropertyName("tags")] public List<string>? Tags { get; set; }
+    [JsonPropertyName("score")] public double Score { get; set; }
+    [JsonPropertyName("preview")] public string? Preview { get; set; }
+}
+
+public sealed class MemorySearchTool
+{
     private readonly VectorStore _vector;
     private readonly ITenantAccessor _tenant;
+    private readonly ILogger<MemorySearchTool> _logger;
 
-    public MemorySearchTool(VectorStore vector, ITenantAccessor tenant)
+    public MemorySearchTool(VectorStore vector, ITenantAccessor tenant, ILogger<MemorySearchTool> logger)
     {
-        _vector = vector;
-        _tenant = tenant;
-
-        ToolDescriptor = new Tool
-        {
-            Name = Name,
-            Description = "Hybrid search over memory index (BM25 + vector). Tenancy is enforced by server context.",
-            InputSchema = ToolSchema.Build((schema, props, req) =>
-            {
-                ToolSchema.Prop(props, "queryText", "string", "BM25/semantic text (optional if vector is supplied)");
-                ToolSchema.Prop(props, "vectorBase64", "string", "Base64(float32[]) optional");
-                ToolSchema.Prop(props, "k", "integer", "Top K (default 8)");
-                ToolSchema.Prop(props, "ontologyClass", "string", "Filter: ontology class (optional)");
-                ToolSchema.Prop(props, "uriEquals", "string", "Filter: exact URI (optional)");
-
-                // array<string> tagsAny
-                var tagsAny = new JsonObject
-                {
-                    ["type"] = "array",
-                    ["items"] = new JsonObject { ["type"] = "string" },
-                    ["title"] = "Filter: any tag matches (optional)"
-                };
-                ((JsonObject)schema["properties"]!)["tagsAny"] = tagsAny;
-            })
-        };
+        _vector = vector ?? throw new ArgumentNullException(nameof(vector));
+        _tenant = tenant ?? throw new ArgumentNullException(nameof(tenant));
+        _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
 
-    public async Task<CallToolResult> CallAsync(Dictionary<string, object?> args, CancellationToken ct)
-    {
-        args.TryGetValue("queryText", out var qObj);
-        var queryText = qObj?.ToString();
+    public static string ToolSchema =>
+        "{\n" +
+        $"  \"@context\": {ToolSchemas.JsonLdContext},\n" +
+        "  \"@id\": \"ldm:tool/MemorySearch\",\n" +
+        "  \"title\": \"Search memory index\",\n" +
+        "  \"description\": \"Hybrid search over memory index (BM25 + vector). Tenancy enforced by server.\",\n" +
+        "  \"input\": {\n" +
+        "    \"type\": \"object\",\n" +
+        "    \"properties\": {\n" +
+        "      \"queryText\": { \"type\": \"string\" },\n" +
+        "      \"vectorBase64\": { \"type\": \"string\" },\n" +
+        "      \"k\": { \"type\": \"integer\", \"minimum\": 1, \"maximum\": 100, \"default\": 8 },\n" +
+        "      \"ontologyClass\": { \"type\": \"string\" },\n" +
+        "      \"uriEquals\": { \"type\": \"string\" },\n" +
+        "      \"tagsAny\": { \"type\": \"array\", \"items\": { \"type\": \"string\" } }\n" +
+        "    }\n" +
+        "  },\n" +
+        "  \"output\": {\n" +
+        "    \"type\": \"object\",\n" +
+        "    \"required\": [\"tenantId\",\"count\",\"items\"],\n" +
+        "    \"properties\": {\n" +
+        "      \"tenantId\": { \"type\": \"string\" },\n" +
+        "      \"count\": { \"type\": \"integer\" },\n" +
+        "      \"items\": { \"type\": \"array\" }\n" +
+        "    }\n" +
+        "  }\n" +
+        "}";
 
+    public async Task<MemorySearchOutput> ExecuteAsync(MemorySearchInput input, CancellationToken ct = default)
+    {
         float[]? vector = null;
-        if (args.TryGetValue("vectorBase64", out var vecObj) && vecObj is not null && !string.IsNullOrWhiteSpace(vecObj.ToString()))
+        if (!string.IsNullOrWhiteSpace(input.VectorBase64))
         {
             try
             {
-                var bytes = Convert.FromBase64String(vecObj!.ToString()!);
-                var floats = new float[bytes.Length / 4];
-                Buffer.BlockCopy(bytes, 0, floats, 0, bytes.Length);
-                vector = floats;
+                var bytes = Convert.FromBase64String(input.VectorBase64);
+                vector = new float[bytes.Length / 4];
+                Buffer.BlockCopy(bytes, 0, vector, 0, bytes.Length);
             }
-            catch
+            catch (Exception ex)
             {
-                throw new McpException("Invalid 'vectorBase64' (must be base64-encoded float32 array).");
+                _logger.LogError(ex, "Failed to parse vectorBase64");
+                throw new ArgumentException("Invalid vectorBase64 (must be base64-encoded float32 array).");
             }
         }
 
-        if (vector is null && string.IsNullOrWhiteSpace(queryText))
-            throw new McpException("Provide either 'queryText' or 'vectorBase64'.");
-
-        var k = 8;
-        if (args.TryGetValue("k", out var kObj) && int.TryParse(kObj?.ToString(), out var kParsed) && kParsed > 0)
-            k = kParsed;
-
-        var filters = new VectorStore.SearchFilters();
-        if (args.TryGetValue("ontologyClass", out var ocObj) && ocObj is not null) filters.OntologyClass = ocObj.ToString();
-        if (args.TryGetValue("uriEquals", out var uriObj) && uriObj is not null) filters.UriEquals = uriObj.ToString();
-
-        if (args.TryGetValue("tagsAny", out var tagsObj) && tagsObj is IEnumerable<object?> en)
-            filters.TagsAny = en.Where(x => x is not null).Select(x => x!.ToString()!).ToArray();
-
-        var results = await _vector.SearchHybridAsync(queryText, vector, k, filters, ct);
-
-        var payload = new
+        if (vector is null && string.IsNullOrWhiteSpace(input.QueryText))
         {
-            tenantId = _tenant.TenantId,
-            count = results.Count,
-            items = results.Select(r => new
+            _logger.LogWarning("MemorySearch called without query or vector");
+            throw new ArgumentException("Provide either queryText or vectorBase64.");
+        }
+
+        var filters = new VectorStore.SearchFilters
+        {
+            OntologyClass = input.OntologyClass,
+            UriEquals = input.UriEquals,
+            TagsAny = input.TagsAny?.ToArray()
+        };
+
+        _logger.LogInformation("Executing memory search for tenant {TenantId}, query: {Query}, k: {K}",
+            _tenant.TenantId, input.QueryText ?? "<vector>", input.K);
+
+        var results = await _vector.SearchHybridAsync(input.QueryText, vector, input.K, filters, ct);
+
+        return new MemorySearchOutput
+        {
+            TenantId = _tenant.TenantId,
+            Count = results.Count,
+            Items = results.Select(r => new MemorySearchItem
             {
-                r.Id,
-                r.Title,
-                r.Source,
-                r.Chunk,
-                r.OntologyClass,
-                r.Uri,
-                r.Tags,
-                r.Score,
-                preview = r.Content is { Length: > 240 } ? r.Content[..240] + "…" : r.Content
-            })
+                Id = r.Id,
+                Title = r.Title,
+                Source = r.Source,
+                Chunk = r.Chunk,
+                OntologyClass = r.OntologyClass,
+                Uri = r.Uri,
+                Tags = r.Tags?.ToList(),
+                Score = r.Score,
+                Preview = r.Content is { Length: > 240 } ? r.Content[..240] + "…" : r.Content
+            }).ToList()
         };
+    }
 
-        return new CallToolResult
-        {
-            Content = [new TextContentBlock { Type = "text", Text = JsonSerializer.Serialize(payload) }]
-        };
+    public Task<MemorySearchOutput> ExecuteAsync(JsonElement json, CancellationToken ct = default)
+    {
+        var input = JsonSerializer.Deserialize<MemorySearchInput>(json, new JsonSerializerOptions { PropertyNameCaseInsensitive = true })
+                    ?? throw new ArgumentException("Invalid MemorySearch input payload.");
+        return ExecuteAsync(input, ct);
     }
 }

@@ -7,6 +7,7 @@ using System.Text.Json;
 using System.Text.Json.Serialization;
 using System.Threading;
 using System.Threading.Tasks;
+using Microsoft.Extensions.Logging;
 
 namespace LimboDancer.MCP.McpServer.Tools
 {
@@ -40,8 +41,13 @@ namespace LimboDancer.MCP.McpServer.Tools
     public sealed class HistoryGetTool
     {
         private readonly IHistoryReader _reader;
+        private readonly ILogger<HistoryGetTool> _logger;
 
-        public HistoryGetTool(IHistoryReader reader) => _reader = reader ?? throw new ArgumentNullException(nameof(reader));
+        public HistoryGetTool(IHistoryReader reader, ILogger<HistoryGetTool> logger)
+        {
+            _reader = reader ?? throw new ArgumentNullException(nameof(reader));
+            _logger = logger ?? throw new ArgumentNullException(nameof(logger));
+        }
 
         public static string ToolSchema =>
             "{\n" +
@@ -70,9 +76,23 @@ namespace LimboDancer.MCP.McpServer.Tools
 
         public async Task<HistoryGetOutput> ExecuteAsync(HistoryGetInput input, CancellationToken ct = default)
         {
-            if (string.IsNullOrWhiteSpace(input.SessionId)) throw new ArgumentException("sessionId is required.");
-            var items = await _reader.ListAsync(input.SessionId, Math.Clamp(input.Limit, 1, 200), input.Before, ct);
-            return new HistoryGetOutput { SessionId = input.SessionId, Messages = new List<HistoryItemDto>(items) };
+            if (string.IsNullOrWhiteSpace(input.SessionId))
+            {
+                _logger.LogWarning("HistoryGet called with empty sessionId");
+                throw new ArgumentException("sessionId is required.");
+            }
+
+            try
+            {
+                _logger.LogInformation("Retrieving history for session {SessionId}, limit {Limit}", input.SessionId, input.Limit);
+                var items = await _reader.ListAsync(input.SessionId, Math.Clamp(input.Limit, 1, 200), input.Before, ct);
+                return new HistoryGetOutput { SessionId = input.SessionId, Messages = new List<HistoryItemDto>(items) };
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error retrieving history for session {SessionId}", input.SessionId);
+                throw;
+            }
         }
 
         public Task<HistoryGetOutput> ExecuteAsync(JsonElement json, CancellationToken ct = default)

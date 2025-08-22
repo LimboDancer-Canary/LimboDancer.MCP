@@ -57,14 +57,17 @@ services.AddSingleton(sp =>
 });
 services.AddScoped<VectorSearchService>();
 
-// History
-services.AddScoped<IHistoryService, HistoryService>();
+// History - Updated to use unified HistoryService
+services.AddScoped<HistoryService>();
+services.AddScoped<IHistoryService>(sp => sp.GetRequiredService<HistoryService>());
+services.AddScoped<IHistoryReader>(sp => sp.GetRequiredService<HistoryService>());
+services.AddScoped<IHistoryStore>(sp => sp.GetRequiredService<HistoryService>());
 
-// MCP tools
-services.AddScoped<IMcpTool, HistoryGetTool>();
-services.AddScoped<IMcpTool, HistoryAppendTool>();
-services.AddScoped<IMcpTool, GraphQueryTool>();
-
+// MCP tools - All 4 tools registered
+services.AddScoped<HistoryGetTool>();
+services.AddScoped<HistoryAppendTool>();
+services.AddScoped<GraphQueryTool>();
+services.AddScoped<MemorySearchTool>();
 var app = builder.Build();
 
 // Health endpoints
