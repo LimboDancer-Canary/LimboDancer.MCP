@@ -69,7 +69,7 @@ namespace LimboDancer.MCP.Vector.AzureSearch
         /// <summary>
         /// Convenience for CLI/server: build from endpoint+apiKey; optional explicit index name.
         /// </summary>
-        public VectorStore(Uri endpoint, string apiKey, string? indexName = null)
+        public VectorStore(Uri endpoint, string apiKey, string? indexName = null, int vectorDimensions = 1536)
         {
             if (endpoint is null) throw new ArgumentNullException(nameof(endpoint));
             if (string.IsNullOrWhiteSpace(apiKey)) throw new ArgumentNullException(nameof(apiKey));
@@ -105,18 +105,10 @@ namespace LimboDancer.MCP.Vector.AzureSearch
         /// Hybrid search: combines textual (semantic) query and vector KNN on Content/ContentVector.
         /// Pass either/both of (queryText, vector). If both are null/empty, throws.
         /// </summary>
-        /// <param name="tenantId">Optional tenant scope. If provided, enforced as a filter.</param>
-        /// <param name="queryText">Lexical/semantic query text (optional).</param>
-        /// <param name="vector">Embedding for vector similarity (optional).</param>
-        /// <param name="k">KNN neighbors to consider for vector scoring (default 50).</param>
-        /// <param name="top">How many results to return (default 20, max 1000).</param>
-        /// <param name="filter">Additional OData filter, ANDed with tenant filter.</param>
-        public async Task<IReadOnlyList<SearchResultItem>> HybridSearchAsync(
-            string? tenantId,
+        public async Task<IReadOnlyList<SearchHit>> SearchHybridAsync(
             string? queryText,
             float[]? vector,
             int k = 50,
-            int top = 20,
             string? filter = null,
             CancellationToken ct = default)
         {
@@ -124,10 +116,9 @@ namespace LimboDancer.MCP.Vector.AzureSearch
                 throw new ArgumentException("Provide queryText and/or vector.");
 
             var options = BuildHybridOptions(
-                tenantId: tenantId,
                 queryTextProvided: !string.IsNullOrWhiteSpace(queryText),
                 k: k,
-                top: top,
+                top: 20,
                 filter: filter,
                 vector: vector
             );
@@ -136,36 +127,41 @@ namespace LimboDancer.MCP.Vector.AzureSearch
             // We select a compact projection; adjust if you need more fields.
             var response = await Client.SearchAsync<SearchDocument>(queryText ?? "*", options, ct);
 
-            var items = new List<SearchResultItem>();
+            var items = new List<SearchHit>();
             await foreach (var result in response.Value.GetResultsAsync())
             {
-                items.Add(ToItem(result));
+                items.Add(ToSearchHit(result));
             }
             return items;
         }
 
         /// <summary>
-        /// Simple text-only semantic search (no vector).
+        /// Hybrid search with structured filters.
         /// </summary>
-        public Task<IReadOnlyList<SearchResultItem>> TextSearchAsync(
-            string? tenantId,
-            string queryText,
-            int top = 20,
-            string? filter = null,
+        public async Task<IReadOnlyList<SearchHit>> SearchHybridAsync(
+            string? queryText,
+            float[]? vector,
+            int k,
+            SearchFilters filters,
             CancellationToken ct = default)
-            => HybridSearchAsync(tenantId, queryText, vector: null, k: 0, top: top, filter: filter, ct);
+        {
+            var filterClauses = new List<string>();
 
-        /// <summary>
-        /// Vector-only KNN search (no text).
-        /// </summary>
-        public Task<IReadOnlyList<SearchResultItem>> VectorSearchAsync(
-            string? tenantId,
-            float[] vector,
-            int k = 50,
-            int top = 20,
-            string? filter = null,
-            CancellationToken ct = default)
-            => HybridSearchAsync(tenantId, queryText: null, vector: vector, k: k, top: top, filter: filter, ct);
+            if (!string.IsNullOrWhiteSpace(filters.OntologyClass))
+                filterClauses.Add($"{F.Kind} eq '{EscapeODataString(filters.OntologyClass)}'");
+
+            if (!string.IsNullOrWhiteSpace(filters.UriEquals))
+                filterClauses.Add($"{F.SourceId} eq '{EscapeODataString(filters.UriEquals)}'");
+
+            if (filters.TagsAny?.Length > 0)
+            {
+                var tagFilters = filters.TagsAny.Select(t => $"{F.Tags} eq '{EscapeODataString(t)}'");
+                filterClauses.Add($"({string.Join(" or ", tagFilters)})");
+            }
+
+            var filter = filterClauses.Count > 0 ? string.Join(" and ", filterClauses) : null;
+            return await SearchHybridAsync(queryText, vector, k, filter, ct);
+        }
 
         // -------------------------
         // Internal helpers
@@ -194,7 +190,6 @@ namespace LimboDancer.MCP.Vector.AzureSearch
         }
 
         private static SearchOptions BuildHybridOptions(
-            string? tenantId,
             bool queryTextProvided,
             int k,
             int top,
@@ -214,6 +209,9 @@ namespace LimboDancer.MCP.Vector.AzureSearch
             options.Select.Add(F.Kind);
             options.Select.Add(F.Status);
             options.Select.Add(F.Tags);
+            options.Select.Add(F.Content);
+            options.Select.Add(F.SourceId);
+            options.Select.Add(F.SourceType);
             options.Select.Add(F.CreatedUtc);
             options.Select.Add(F.UpdatedUtc);
 
@@ -246,16 +244,8 @@ namespace LimboDancer.MCP.Vector.AzureSearch
                 };
             }
 
-            // Tenant filter + additional filter
-            var filters = new List<string>();
-            if (!string.IsNullOrWhiteSpace(tenantId))
-                filters.Add($"{F.TenantId} eq '{EscapeODataString(tenantId)}'");
-
             if (!string.IsNullOrWhiteSpace(filter))
-                filters.Add($"({filter})");
-
-            if (filters.Count > 0)
-                options.Filter = string.Join(" and ", filters);
+                options.Filter = filter;
 
             return options;
         }
@@ -263,24 +253,38 @@ namespace LimboDancer.MCP.Vector.AzureSearch
         private static string EscapeODataString(string value)
             => value.Replace("'", "''");
 
-        private static SearchResultItem ToItem(SearchResult<SearchDocument> r)
+        private static SearchHit ToSearchHit(SearchResult<SearchDocument> r)
         {
             var d = r.Document;
 
             string? GetString(string key) => d.TryGetValue(key, out var val) ? val as string : null;
             DateTimeOffset? GetDto(string key) => d.TryGetValue(key, out var val) ? val as DateTimeOffset? : null;
+            int? GetInt(string key) => d.TryGetValue(key, out var val) && val is int i ? i : null;
 
-            return new SearchResultItem
+            var sourceId = GetString(F.SourceId);
+            string? source = null;
+            int? chunk = null;
+
+            // Parse source and chunk from sourceId pattern "source#chunk"
+            if (!string.IsNullOrEmpty(sourceId))
+            {
+                var parts = sourceId.Split('#');
+                source = parts[0];
+                if (parts.Length > 1 && int.TryParse(parts[1], out var c))
+                    chunk = c;
+            }
+
+            return new SearchHit
             {
                 Id = GetString(F.Id)!,
-                TenantId = GetString(F.TenantId),
-                Label = GetString(F.Label),
-                Kind = GetString(F.Kind),
-                Status = GetString(F.Status),
-                Tags = GetString(F.Tags),
-                CreatedUtc = GetDto(F.CreatedUtc),
-                UpdatedUtc = GetDto(F.UpdatedUtc),
-                Score = r.Score
+                Title = GetString(F.Label),
+                Source = source,
+                Chunk = chunk,
+                OntologyClass = GetString(F.Kind),
+                Uri = GetString(F.SourceId),
+                Tags = GetString(F.Tags)?.Split(',', StringSplitOptions.RemoveEmptyEntries),
+                Content = GetString(F.Content),
+                Score = r.Score ?? 0
             };
         }
 
@@ -288,17 +292,24 @@ namespace LimboDancer.MCP.Vector.AzureSearch
         // Public models
         // -------------------------
 
-        public sealed class SearchResultItem
+        public sealed class SearchHit
         {
             public string Id { get; set; } = default!;
-            public string? TenantId { get; set; }
-            public string? Label { get; set; }
-            public string? Kind { get; set; }
-            public string? Status { get; set; }
-            public string? Tags { get; set; }
-            public DateTimeOffset? CreatedUtc { get; set; }
-            public DateTimeOffset? UpdatedUtc { get; set; }
-            public double? Score { get; set; }
+            public string? Title { get; set; }
+            public string? Source { get; set; }
+            public int? Chunk { get; set; }
+            public string? OntologyClass { get; set; }
+            public string? Uri { get; set; }
+            public string[]? Tags { get; set; }
+            public string? Content { get; set; }
+            public double Score { get; set; }
+        }
+
+        public sealed class SearchFilters
+        {
+            public string? OntologyClass { get; set; }
+            public string? UriEquals { get; set; }
+            public string[]? TagsAny { get; set; }
         }
     }
 }

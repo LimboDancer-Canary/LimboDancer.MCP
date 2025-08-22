@@ -1,4 +1,6 @@
 ﻿using LimboDancer.MCP.Ontology.Mapping;
+using LimboDancer.MCP.Core.Tenancy;
+using Microsoft.Extensions.Logging;
 
 namespace LimboDancer.MCP.McpServer.Graph
 {
@@ -18,23 +20,18 @@ namespace LimboDancer.MCP.McpServer.Graph
         Task ApplyAsync(ApplyGraphEffectsRequest request, CancellationToken ct = default);
     }
 
-    public interface ITenantScopeAccessor
-    {
-        string? CurrentTenantId { get; }
-    }
-
     public sealed class GraphEffectsService : IGraphEffectsService
     {
         private readonly IGraphStore _graph;
         private readonly IPropertyKeyMapper _keys;
-        private readonly ITenantScopeAccessor _scope;
+        private readonly ITenantAccessor _tenant;
         private readonly ILogger<GraphEffectsService> _log;
 
-        public GraphEffectsService(IGraphStore graph, IPropertyKeyMapper keys, ITenantScopeAccessor scope, ILogger<GraphEffectsService> log)
+        public GraphEffectsService(IGraphStore graph, IPropertyKeyMapper keys, ITenantAccessor tenant, ILogger<GraphEffectsService> log)
         {
             _graph = graph ?? throw new ArgumentNullException(nameof(graph));
             _keys = keys ?? throw new ArgumentNullException(nameof(keys));
-            _scope = scope ?? throw new ArgumentNullException(nameof(scope));
+            _tenant = tenant ?? throw new ArgumentNullException(nameof(tenant));
             _log = log ?? throw new ArgumentNullException(nameof(log));
         }
 
@@ -43,8 +40,8 @@ namespace LimboDancer.MCP.McpServer.Graph
             if (request is null) throw new ArgumentNullException(nameof(request));
             if (string.IsNullOrWhiteSpace(request.SubjectVertexId)) throw new ArgumentException("SubjectVertexId is required.", nameof(request));
 
-            var tenantId = _scope.CurrentTenantId;
-            if (string.IsNullOrWhiteSpace(tenantId))
+            var tenantId = _tenant.TenantId;
+            if (tenantId == Guid.Empty)
             {
                 _log.LogWarning("Applying GraphEffects without a resolved TenantId. Subject={Subject}", request.SubjectVertexId);
             }
@@ -66,7 +63,7 @@ namespace LimboDancer.MCP.McpServer.Graph
             }
         }
 
-        private async Task ApplyPropertyEffectAsync(string subjectId, GraphEffect effect, string? tenantId, CancellationToken ct)
+        private async Task ApplyPropertyEffectAsync(string subjectId, GraphEffect effect, Guid tenantId, CancellationToken ct)
         {
             if (string.IsNullOrWhiteSpace(effect.Predicate))
             {
@@ -83,7 +80,7 @@ namespace LimboDancer.MCP.McpServer.Graph
             await _graph.UpsertVertexPropertyAsync(subjectId, propertyKey, effect.Value, tenantId, ct);
         }
 
-        private async Task ApplyEdgeEffectAsync(string subjectId, GraphEffect effect, string? tenantId, CancellationToken ct)
+        private async Task ApplyEdgeEffectAsync(string subjectId, GraphEffect effect, Guid tenantId, CancellationToken ct)
         {
             if (string.IsNullOrWhiteSpace(effect.EdgeTargetId) || string.IsNullOrWhiteSpace(effect.EdgeLabel))
             {

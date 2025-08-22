@@ -10,14 +10,6 @@ namespace LimboDancer.MCP.Graph.CosmosGremlin
 {
     /// <summary>
     /// GraphStore encapsulates Gremlin (Cosmos DB) vertex/edge upsert operations with tenant scoping.
-    ///
-    /// Migration Note (C5):
-    /// The delegate-based constructor GraphStore(IGremlinClient, Func&lt;string&gt;, ILoggerFactory, ...) has been removed.
-    /// GraphStore now depends directly on ITenantAccessor for tenant resolution.
-    /// Usage: new GraphStore(gremlinClient, tenantAccessor, loggerFactory)
-    /// Preconditions always acquire their logger via ILoggerFactory; no casting occurs now.
-    ///
-    /// TODO (G7): Introduce DI extension AddCosmosGremlinGraph(...) to centralize registration & options binding.
     /// </summary>
     public sealed class GraphStore
     {
@@ -58,7 +50,7 @@ namespace LimboDancer.MCP.Graph.CosmosGremlin
             {
                 ["vid"] = vertexId,
                 ["lbl"] = label,
-                ["tid"] = tenantId,
+                ["tid"] = tenantId.ToString("D"),
                 ["tprop"] = GraphWriteHelpers.TenantPropertyName
             };
 
@@ -74,7 +66,7 @@ namespace LimboDancer.MCP.Graph.CosmosGremlin
                     {
                         ["vid"] = vertexId,
                         ["tprop"] = GraphWriteHelpers.TenantPropertyName,
-                        ["tid"] = tenantId
+                        ["tid"] = tenantId.ToString("D")
                     };
                     await _client.SubmitAsync<dynamic>(pQuery, pBindings, cancellationToken: ct).ConfigureAwait(false);
                 }
@@ -85,13 +77,71 @@ namespace LimboDancer.MCP.Graph.CosmosGremlin
                     {
                         ["vid"] = vertexId,
                         ["tprop"] = GraphWriteHelpers.TenantPropertyName,
-                        ["tid"] = tenantId,
+                        ["tid"] = tenantId.ToString("D"),
                         ["k"] = kv.Key,
                         ["v"] = kv.Value
                     };
                     await _client.SubmitAsync<dynamic>(pQuery, pBindings, cancellationToken: ct).ConfigureAwait(false);
                 }
             }
+        }
+
+        /// <summary>
+        /// Upsert a single property on a vertex with optional explicit tenant override.
+        /// Used by GraphEffectsService for property effects.
+        /// </summary>
+        public async Task UpsertVertexPropertyAsync(string localId, string propertyKey, object? value, Guid? tenantIdOverride = null, CancellationToken ct = default)
+        {
+            GraphWriteHelpers.ValidatePropertyKey(propertyKey);
+
+            var tenantId = tenantIdOverride ?? _tenantAccessor.TenantId;
+            var vertexId = GraphWriteHelpers.ToVertexId(tenantId, localId);
+
+            // Ensure vertex exists first
+            if (!await _preconditions.VertexExistsAsync(localId, ct).ConfigureAwait(false))
+            {
+                throw new InvalidOperationException($"Vertex '{localId}' does not exist for tenant '{tenantId}'.");
+            }
+
+            var query = "g.V(vid).has(tprop, tid).property(k, v)";
+            var bindings = new Dictionary<string, object>
+            {
+                ["vid"] = vertexId,
+                ["tprop"] = GraphWriteHelpers.TenantPropertyName,
+                ["tid"] = tenantId.ToString("D"),
+                ["k"] = propertyKey,
+                ["v"] = value ?? ""
+            };
+
+            await _client.SubmitAsync<dynamic>(query, bindings, cancellationToken: ct).ConfigureAwait(false);
+        }
+
+        /// <summary>
+        /// Get a property value from a vertex.
+        /// Used by GraphPreconditionsService.
+        /// </summary>
+        public async Task<string?> GetVertexPropertyAsync(string localId, string propertyKey, CancellationToken ct = default)
+        {
+            GraphWriteHelpers.ValidatePropertyKey(propertyKey);
+
+            var tenantId = _tenantAccessor.TenantId;
+            var vertexId = GraphWriteHelpers.ToVertexId(tenantId, localId);
+
+            var query = "g.V(vid).has(tprop, tid).values(k).limit(1)";
+            var bindings = new Dictionary<string, object>
+            {
+                ["vid"] = vertexId,
+                ["tprop"] = GraphWriteHelpers.TenantPropertyName,
+                ["tid"] = tenantId.ToString("D"),
+                ["k"] = propertyKey
+            };
+
+            var result = await _client.SubmitAsync<dynamic>(query, bindings, cancellationToken: ct).ConfigureAwait(false);
+            foreach (var r in result)
+            {
+                return r?.ToString();
+            }
+            return null;
         }
 
         public async Task UpsertEdgeAsync(string label, string outLocalId, string inLocalId, IDictionary<string, object>? properties = null, CancellationToken ct = default)
@@ -124,7 +174,7 @@ namespace LimboDancer.MCP.Graph.CosmosGremlin
                 ["outId"] = outId,
                 ["inId"] = inId,
                 ["lbl"] = label,
-                ["tid"] = tenantId,
+                ["tid"] = tenantId.ToString("D"),
                 ["tprop"] = GraphWriteHelpers.TenantPropertyName
             };
 
@@ -142,7 +192,7 @@ namespace LimboDancer.MCP.Graph.CosmosGremlin
                         ["inId"] = inId,
                         ["lbl"] = label,
                         ["tprop"] = GraphWriteHelpers.TenantPropertyName,
-                        ["tid"] = tenantId
+                        ["tid"] = tenantId.ToString("D")
                     };
                     await _client.SubmitAsync<dynamic>(q, b, cancellationToken: ct).ConfigureAwait(false);
                 }
@@ -154,7 +204,7 @@ namespace LimboDancer.MCP.Graph.CosmosGremlin
                         ["outId"] = outId,
                         ["inId"] = inId,
                         ["lbl"] = label,
-                        ["tid"] = tenantId,
+                        ["tid"] = tenantId.ToString("D"),
                         ["tprop"] = GraphWriteHelpers.TenantPropertyName,
                         ["k"] = kv.Key,
                         ["v"] = kv.Value
@@ -162,6 +212,22 @@ namespace LimboDancer.MCP.Graph.CosmosGremlin
                     await _client.SubmitAsync<dynamic>(q, b, cancellationToken: ct).ConfigureAwait(false);
                 }
             }
+        }
+
+        /// <summary>
+        /// Upsert edge with optional explicit tenant override.
+        /// Used by GraphEffectsService for edge effects.
+        /// </summary>
+        public async Task UpsertEdgeAsync(string outLocalId, string inLocalId, string label, IDictionary<string, object>? properties, Guid? tenantIdOverride, CancellationToken ct = default)
+        {
+            // Set tenant override if provided
+            var originalTenantId = _tenantAccessor.TenantId;
+            if (tenantIdOverride.HasValue && tenantIdOverride.Value != originalTenantId)
+            {
+                _logger.LogWarning("UpsertEdge called with tenant override from {Original} to {Override}", originalTenantId, tenantIdOverride.Value);
+            }
+
+            await UpsertEdgeAsync(label, outLocalId, inLocalId, properties, ct).ConfigureAwait(false);
         }
 
         public async Task<dynamic?> GetVertexAsync(string localId, CancellationToken ct = default)
@@ -173,7 +239,7 @@ namespace LimboDancer.MCP.Graph.CosmosGremlin
             var bindings = new Dictionary<string, object>
             {
                 ["vid"] = vid,
-                ["tid"] = tenantId,
+                ["tid"] = tenantId.ToString("D"),
                 ["tprop"] = GraphWriteHelpers.TenantPropertyName
             };
 
@@ -191,7 +257,7 @@ namespace LimboDancer.MCP.Graph.CosmosGremlin
             var bindings = new Dictionary<string, object>
             {
                 ["lbl"] = label,
-                ["tid"] = tenantId,
+                ["tid"] = tenantId.ToString("D"),
                 ["tprop"] = GraphWriteHelpers.TenantPropertyName
             };
 
@@ -207,7 +273,7 @@ namespace LimboDancer.MCP.Graph.CosmosGremlin
             var bindings = new Dictionary<string, object>
             {
                 ["vid"] = vid,
-                ["tid"] = tenantId,
+                ["tid"] = tenantId.ToString("D"),
                 ["tprop"] = GraphWriteHelpers.TenantPropertyName
             };
 
@@ -231,7 +297,7 @@ namespace LimboDancer.MCP.Graph.CosmosGremlin
                 ["outId"] = outId,
                 ["inId"] = inId,
                 ["lbl"] = label,
-                ["tid"] = tenantId,
+                ["tid"] = tenantId.ToString("D"),
                 ["tprop"] = GraphWriteHelpers.TenantPropertyName
             };
 
