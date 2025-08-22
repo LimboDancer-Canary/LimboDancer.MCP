@@ -1,10 +1,10 @@
+using LimboDancer.MCP.Core.Tenancy;
 using Microsoft.Extensions.Options;
 
 namespace LimboDancer.MCP.BlazorConsole.Services;
 
 /// <summary>
-/// Delegating handler that ensures the tenant header is present on outgoing requests.
-/// If the request already added the header explicitly, this handler leaves it alone.
+/// Ensures the tenant header is present on outgoing requests unless already supplied explicitly.
 /// </summary>
 public sealed class TenantHeaderHandler : DelegatingHandler
 {
@@ -19,12 +19,10 @@ public sealed class TenantHeaderHandler : DelegatingHandler
 
     protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
     {
-        var headerName = _options.Value.TenantHeaderName ?? "X-Tenant-Id";
+        var headerName = _options.Value.TenantHeaderName ?? TenantHeaders.TenantId;
         var tenantId = _tenant.CurrentTenantId;
 
-        // Only add if a tenant is known AND header not already present.
-        if (!string.IsNullOrWhiteSpace(tenantId) &&
-            !request.Headers.Contains(headerName))
+        if (!string.IsNullOrWhiteSpace(tenantId) && !request.Headers.Contains(headerName))
         {
             request.Headers.TryAddWithoutValidation(headerName, tenantId);
         }
