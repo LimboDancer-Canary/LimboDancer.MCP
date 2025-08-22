@@ -233,7 +233,7 @@ namespace LimboDancer.MCP.Graph.CosmosGremlin
         public async Task<dynamic?> GetVertexAsync(string localId, CancellationToken ct = default)
         {
             var tenantId = _tenantAccessor.TenantId;
-            var vid = GraphWriteHelpers.ToVertexId(tenantId, localId);
+            var vid = GraphWriteHelpers.ToVertexId(Guid.Parse(tenantId), localId);
 
             var query = "g.V(vid).has(tprop, tid).limit(1)";
             var bindings = new Dictionary<string, object>

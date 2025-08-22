@@ -68,10 +68,10 @@ public sealed class GraphPreconditionsService : IGraphPreconditionsService
         // Simple existence check if no predicate
         if (string.IsNullOrWhiteSpace(precondition.Predicate))
         {
-            var exists = await _graph.GetVertexPropertyAsync(subjectId, Kg.Name, ct);
-            return string.IsNullOrEmpty(exists)
-                ? PreconditionCheckResult.Fail($"[{scope}] Subject {subjectId} not found.")
-                : PreconditionCheckResult.Pass();
+            var vertex = await _graph.GetVertexAsync(subjectId, ct);
+            return vertex != null
+                ? PreconditionCheckResult.Pass()
+                : PreconditionCheckResult.Fail($"[{scope}] Subject {subjectId} not found.");
         }
 
         // Map the predicate to a graph property key
@@ -83,26 +83,34 @@ public sealed class GraphPreconditionsService : IGraphPreconditionsService
         }
 
         // Check the condition based on the operation
+        var actualValue = await _graph.GetVertexPropertyAsync(subjectId, propertyKey, ct);
+
         switch (precondition.Op?.ToLowerInvariant() ?? "eq")
         {
             case "eq":
             case "equals":
-                var value = await _graph.GetVertexPropertyAsync(subjectId, propertyKey, ct);
                 var expected = precondition.Expected?.ToString() ?? "";
-                if (!string.Equals(value, expected, StringComparison.OrdinalIgnoreCase))
+                if (!string.Equals(actualValue, expected, StringComparison.OrdinalIgnoreCase))
                 {
-                    var actual = value ?? "<null>";
+                    var actual = actualValue ?? "<null>";
                     return PreconditionCheckResult.Fail(
                         $"[{scope}] Precondition failed: {propertyKey} != {expected} (actual: {actual})");
                 }
                 break;
 
             case "exists":
-                var existsValue = await _graph.GetVertexPropertyAsync(subjectId, propertyKey, ct);
-                if (string.IsNullOrEmpty(existsValue))
+                if (string.IsNullOrEmpty(actualValue))
                 {
                     return PreconditionCheckResult.Fail(
                         $"[{scope}] Precondition failed: property {propertyKey} does not exist");
+                }
+                break;
+
+            case "not_exists":
+                if (!string.IsNullOrEmpty(actualValue))
+                {
+                    return PreconditionCheckResult.Fail(
+                        $"[{scope}] Precondition failed: property {propertyKey} exists (value: {actualValue})");
                 }
                 break;
 
@@ -113,43 +121,10 @@ public sealed class GraphPreconditionsService : IGraphPreconditionsService
 
         return PreconditionCheckResult.Pass();
     }
-
-    // Legacy methods preserved for backward compatibility
-    public async Task<PreconditionCheckResult> EvaluateAsync(
-        string subjectLabel,
-        string subjectId,
-        ToolPrecondition precondition,
-        CancellationToken ct = default)
-    {
-        var graphPrecondition = new GraphPrecondition(
-            precondition.Predicate ?? "",
-            "eq",
-            precondition.Equals
-        );
-
-        return await EvaluatePreconditionAsync(subjectId, graphPrecondition, ct);
-    }
-
-    public async Task<PreconditionCheckResult> EvaluateAllAsync(
-        string subjectLabel,
-        string subjectId,
-        IEnumerable<ToolPrecondition> preconditions,
-        CancellationToken ct = default)
-    {
-        foreach (var p in preconditions)
-        {
-            var r = await EvaluateAsync(subjectLabel, subjectId, p, ct);
-            if (!r.Ok) return r;
-        }
-        return PreconditionCheckResult.Pass();
-    }
 }
 
-public sealed record PreconditionCheckResult(bool Ok, string? Reason)
+internal sealed record PreconditionCheckResult(bool Ok, string? Reason)
 {
     public static PreconditionCheckResult Pass() => new(true, null);
     public static PreconditionCheckResult Fail(string reason) => new(false, reason);
 }
-
-// Legacy type for backward compatibility
-public sealed record ToolPrecondition(string? Predicate, string? Equals);
