@@ -3,8 +3,6 @@
 using System.Net.Http.Headers;
 using LimboDancer.MCP.BlazorConsole.Services;
 using Microsoft.Extensions.Options;
-
-using LimboDancer.MCP.BlazorConsole.Services;
 using LimboDancer.MCP.Ontology.Mapping;
 
 var builder = WebApplication.CreateBuilder(args);
