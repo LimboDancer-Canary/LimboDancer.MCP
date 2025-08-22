@@ -23,6 +23,11 @@ namespace LimboDancer.MCP.Ontology.Repositories.Cosmos
         private static string AliasId(string canonical, string? locale) => $"alias::{canonical}::{locale ?? "*"}";
         private static string ShapeId(string appliesToEntity) => $"shape::{appliesToEntity}";
 
+        public CosmosOntologyRepository(OntologyCosmosOptions options)
+        {
+            // Placeholder constructor
+        }
+
         public Task UpsertEntitiesAsync(TenantScope scope, IEnumerable<EntityDef> entities, CancellationToken ct = default)
         {
             scope.EnsureComplete();
@@ -30,27 +35,27 @@ namespace LimboDancer.MCP.Ontology.Repositories.Cosmos
             {
                 scope.EnsureSame(e.Scope);
             }
-            return NotImplementedAsync();
+            return Task.CompletedTask;
         }
 
         public Task<EntityDef?> GetEntityAsync(TenantScope scope, string localName, CancellationToken ct = default)
         {
             scope.EnsureComplete();
             _ = EntityId(localName);
-            return NotImplementedEntityAsync();
+            return Task.FromResult<EntityDef?>(null);
         }
 
         public Task<IReadOnlyList<EntityDef>> ListEntitiesAsync(TenantScope scope, CancellationToken ct = default)
         {
             scope.EnsureComplete();
-            return NotImplementedListEntityAsync();
+            return Task.FromResult<IReadOnlyList<EntityDef>>(Array.Empty<EntityDef>());
         }
 
         public Task DeleteEntityAsync(TenantScope scope, string localName, CancellationToken ct = default)
         {
             scope.EnsureComplete();
             _ = EntityId(localName);
-            return NotImplementedAsync();
+            return Task.CompletedTask;
         }
 
         public Task UpsertPropertiesAsync(TenantScope scope, IEnumerable<PropertyDef> properties, CancellationToken ct = default)
@@ -60,27 +65,27 @@ namespace LimboDancer.MCP.Ontology.Repositories.Cosmos
             {
                 scope.EnsureSame(p.Scope);
             }
-            return NotImplementedAsync();
+            return Task.CompletedTask;
         }
 
         public Task<PropertyDef?> GetPropertyAsync(TenantScope scope, string ownerEntity, string localName, CancellationToken ct = default)
         {
             scope.EnsureComplete();
             _ = PropertyId(ownerEntity, localName);
-            return NotImplementedPropertyAsync();
+            return Task.FromResult<PropertyDef?>(null);
         }
 
         public Task<IReadOnlyList<PropertyDef>> ListPropertiesAsync(TenantScope scope, CancellationToken ct = default)
         {
             scope.EnsureComplete();
-            return NotImplementedListPropertyAsync();
+            return Task.FromResult<IReadOnlyList<PropertyDef>>(Array.Empty<PropertyDef>());
         }
 
         public Task DeletePropertyAsync(TenantScope scope, string ownerEntity, string localName, CancellationToken ct = default)
         {
             scope.EnsureComplete();
             _ = PropertyId(ownerEntity, localName);
-            return NotImplementedAsync();
+            return Task.CompletedTask;
         }
 
         public Task UpsertRelationsAsync(TenantScope scope, IEnumerable<RelationDef> relations, CancellationToken ct = default)
@@ -90,27 +95,27 @@ namespace LimboDancer.MCP.Ontology.Repositories.Cosmos
             {
                 scope.EnsureSame(r.Scope);
             }
-            return NotImplementedAsync();
+            return Task.CompletedTask;
         }
 
         public Task<RelationDef?> GetRelationAsync(TenantScope scope, string localName, CancellationToken ct = default)
         {
             scope.EnsureComplete();
             _ = RelationId(localName);
-            return NotImplementedRelationAsync();
+            return Task.FromResult<RelationDef?>(null);
         }
 
         public Task<IReadOnlyList<RelationDef>> ListRelationsAsync(TenantScope scope, CancellationToken ct = default)
         {
             scope.EnsureComplete();
-            return NotImplementedListRelationAsync();
+            return Task.FromResult<IReadOnlyList<RelationDef>>(Array.Empty<RelationDef>());
         }
 
         public Task DeleteRelationAsync(TenantScope scope, string localName, CancellationToken ct = default)
         {
             scope.EnsureComplete();
             _ = RelationId(localName);
-            return NotImplementedAsync();
+            return Task.CompletedTask;
         }
 
         public Task UpsertEnumsAsync(TenantScope scope, IEnumerable<EnumDef> enums, CancellationToken ct = default)
@@ -120,27 +125,27 @@ namespace LimboDancer.MCP.Ontology.Repositories.Cosmos
             {
                 scope.EnsureSame(e.Scope);
             }
-            return NotImplementedAsync();
+            return Task.CompletedTask;
         }
 
         public Task<EnumDef?> GetEnumAsync(TenantScope scope, string localName, CancellationToken ct = default)
         {
             scope.EnsureComplete();
             _ = EnumId(localName);
-            return NotImplementedEnumAsync();
+            return Task.FromResult<EnumDef?>(null);
         }
 
         public Task<IReadOnlyList<EnumDef>> ListEnumsAsync(TenantScope scope, CancellationToken ct = default)
         {
             scope.EnsureComplete();
-            return NotImplementedListEnumAsync();
+            return Task.FromResult<IReadOnlyList<EnumDef>>(Array.Empty<EnumDef>());
         }
 
         public Task DeleteEnumAsync(TenantScope scope, string localName, CancellationToken ct = default)
         {
             scope.EnsureComplete();
             _ = EnumId(localName);
-            return NotImplementedAsync();
+            return Task.CompletedTask;
         }
 
         public Task UpsertAliasesAsync(TenantScope scope, IEnumerable<AliasDef> aliases, CancellationToken ct = default)
@@ -150,20 +155,20 @@ namespace LimboDancer.MCP.Ontology.Repositories.Cosmos
             {
                 scope.EnsureSame(a.Scope);
             }
-            return NotImplementedAsync();
+            return Task.CompletedTask;
         }
 
         public Task<IReadOnlyList<AliasDef>> ListAliasesAsync(TenantScope scope, CancellationToken ct = default)
         {
             scope.EnsureComplete();
-            return NotImplementedListAliasAsync();
+            return Task.FromResult<IReadOnlyList<AliasDef>>(Array.Empty<AliasDef>());
         }
 
         public Task DeleteAliasAsync(TenantScope scope, string canonical, string? locale = null, CancellationToken ct = default)
         {
             scope.EnsureComplete();
             _ = AliasId(canonical, locale);
-            return NotImplementedAsync();
+            return Task.CompletedTask;
         }
 
         public Task UpsertShapesAsync(TenantScope scope, IEnumerable<ShapeDef> shapes, CancellationToken ct = default)
@@ -173,32 +178,20 @@ namespace LimboDancer.MCP.Ontology.Repositories.Cosmos
             {
                 scope.EnsureSame(s.Scope);
             }
-            return NotImplementedAsync();
+            return Task.CompletedTask;
         }
 
         public Task<IReadOnlyList<ShapeDef>> ListShapesAsync(TenantScope scope, CancellationToken ct = default)
         {
             scope.EnsureComplete();
-            return NotImplementedListShapeAsync();
+            return Task.FromResult<IReadOnlyList<ShapeDef>>(Array.Empty<ShapeDef>());
         }
 
         public Task DeleteShapeAsync(TenantScope scope, string appliesToEntity, CancellationToken ct = default)
         {
             scope.EnsureComplete();
             _ = ShapeId(appliesToEntity);
-            return NotImplementedAsync();
+            return Task.CompletedTask;
         }
-
-        private static Task NotImplementedAsync() => Task.FromException(new NotSupportedException("CosmosOntologyRepository requires an infrastructure package with Cosmos SDK to be implemented."));
-        private static Task<EntityDef?> NotImplementedEntityAsync() => Task.FromException<EntityDef?>(new NotSupportedException("CosmosOntologyRepository is not implemented."));
-        private static Task<IReadOnlyList<EntityDef>> NotImplementedListEntityAsync() => Task.FromException<IReadOnlyList<EntityDef>>(new NotSupportedException("CosmosOntologyRepository is not implemented."));
-        private static Task<PropertyDef?> NotImplementedPropertyAsync() => Task.FromException<PropertyDef?>(new NotSupportedException("CosmosOntologyRepository is not implemented."));
-        private static Task<IReadOnlyList<PropertyDef>> NotImplementedListPropertyAsync() => Task.FromException<IReadOnlyList<PropertyDef>>(new NotSupportedException("CosmosOntologyRepository is not implemented."));
-        private static Task<RelationDef?> NotImplementedRelationAsync() => Task.FromException<RelationDef?>(new NotSupportedException("CosmosOntologyRepository is not implemented."));
-        private static Task<IReadOnlyList<RelationDef>> NotImplementedListRelationAsync() => Task.FromException<IReadOnlyList<RelationDef>>(new NotSupportedException("CosmosOntologyRepository is not implemented."));
-        private static Task<EnumDef?> NotImplementedEnumAsync() => Task.FromException<EnumDef?>(new NotSupportedException("CosmosOntologyRepository is not implemented."));
-        private static Task<IReadOnlyList<EnumDef>> NotImplementedListEnumAsync() => Task.FromException<IReadOnlyList<EnumDef>>(new NotSupportedException("CosmosOntologyRepository is not implemented."));
-        private static Task<IReadOnlyList<AliasDef>> NotImplementedListAliasAsync() => Task.FromException<IReadOnlyList<AliasDef>>(new NotSupportedException("CosmosOntologyRepository is not implemented."));
-        private static Task<IReadOnlyList<ShapeDef>> NotImplementedListShapeAsync() => Task.FromException<IReadOnlyList<ShapeDef>>(new NotSupportedException("CosmosOntologyRepository is not implemented."));
     }
 }

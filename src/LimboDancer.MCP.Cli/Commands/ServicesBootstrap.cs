@@ -3,6 +3,7 @@ using Azure.Search.Documents;
 using Azure.Search.Documents.Indexes;
 using Gremlin.Net.Driver;
 using LimboDancer.MCP.Core;
+using LimboDancer.MCP.Core.Tenancy;
 using LimboDancer.MCP.Graph.CosmosGremlin;
 using LimboDancer.MCP.Storage;
 using LimboDancer.MCP.Vector.AzureSearch;
@@ -17,6 +18,9 @@ internal static class ServicesBootstrap
     public static void Configure(HostApplicationBuilder b)
     {
         var cfg = b.Configuration;
+
+        // Tenancy
+        b.Services.AddAmbientTenantAccessor(cfg);
 
         // EF Core (Chat) — Audit can be added later
         b.Services.AddDbContext<ChatDbContext>(opt =>
@@ -43,21 +47,10 @@ internal static class ServicesBootstrap
             return new SearchClient(endpoint, index, key);
         });
 
-        // Vector store (embed delegate is supplied by MemAddCommand at call time)
+        // Vector store
         b.Services.AddSingleton<VectorStore>();
 
-        // Gremlin client
-        b.Services.AddSingleton<IGremlinClient>(_ =>
-        {
-            var opts = new GremlinOptions
-            {
-                Host = cfg["Gremlin:Host"]!,
-                Port = int.TryParse(cfg["Gremlin:Port"], out var p) ? p : 443,
-                Database = cfg["Gremlin:Database"]!,
-                Graph = cfg["Gremlin:Graph"]!,
-                PrimaryKey = cfg["Gremlin:Key"]!
-            };
-            return GremlinClientFactory.Create(opts);
-        });
+        // Gremlin + GraphStore
+        b.Services.AddCosmosGremlinGraph(cfg);
     }
 }

@@ -14,6 +14,7 @@ using LimboDancer.MCP.Ontology.Store;
 using LimboDancer.MCP.Storage;
 using LimboDancer.MCP.Vector.AzureSearch;
 using Microsoft.EntityFrameworkCore;
+using LimboDancer.MCP.Ontology.Validation;
 using ITenantScopeAccessor = LimboDancer.MCP.McpServer.Tenancy.ITenantScopeAccessor;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -107,51 +108,66 @@ app.MapGet("/api/ontology/validate", async (HttpContext http, IOntologyRepositor
     string channel = http.Request.Query["channel"];
 
     if (string.IsNullOrWhiteSpace(tenant) || string.IsNullOrWhiteSpace(package) || string.IsNullOrWhiteSpace(channel))
-        return Results.BadRequest(new { error = "Missing required query params: tenant, package, channel." });
+        return Results.Json(new { error = "Missing required query params: tenant, package, channel." }, statusCode: 400);
 
     var scope = new TenantScope(tenant, package, channel);
 
-    var store = new OntologyStore(repo);
     try
     {
-        await store.LoadAsync(scope, ct).ConfigureAwait(false);
+        var store = new OntologyStore(repo);
+        await store.LoadAsync(scope, ct);
+
+        var validation = OntologyValidator.Validate(store, scope);
+
+        return Results.Ok(new
+        {
+            scope = scope.ToString(),
+            isValid = validation.Count == 0,
+            errors = validation
+        });
+    }
+    catch (TenantScopeException ex)
+    {
+        return Results.Json(new { error = ex.Message }, statusCode: 400);
     }
     catch (Exception ex)
     {
-        return Results.BadRequest(new { error = ex.Message });
+        var logger = app.Services.GetRequiredService<ILogger<Program>>();
+        logger.LogError(ex, "Ontology validation error");
+        return Results.Json(new { error = "An error occurred during validation." }, statusCode: 500);
     }
-
-    var validation = OntologyValidator.Validate(store, scope);
-    return Results.Ok(new
-    {
-        scope,
-        validation.Errors
-    });
 });
 
 app.MapPost("/api/ontology/validate", async (HttpContext http, IOntologyRepository repo, OntologyValidationRequest request, CancellationToken ct) =>
 {
     if (string.IsNullOrWhiteSpace(request.TenantId) || string.IsNullOrWhiteSpace(request.PackageId) || string.IsNullOrWhiteSpace(request.ChannelId))
-        return Results.BadRequest(new { error = "Missing required fields: tenantId, packageId, channelId." });
+        return Results.Json(new { error = "Missing required fields: tenantId, packageId, channelId." }, statusCode: 400);
 
     var scope = new TenantScope(request.TenantId, request.PackageId, request.ChannelId);
 
-    var store = new OntologyStore(repo);
     try
     {
-        await store.LoadAsync(scope, ct).ConfigureAwait(false);
+        var store = new OntologyStore(repo);
+        await store.LoadAsync(scope, ct);
+
+        var validation = OntologyValidator.Validate(store, scope);
+        return Results.Ok(new
+        {
+            scope = scope.ToString(),
+            isValid = validation.Errors.Count == 0,
+            errors = validation.Errors
+        });
+    }
+    catch (TenantScopeException ex)
+    {
+        return Results.Json(new { error = ex.Message }, statusCode: 400);
     }
     catch (Exception ex)
     {
-        return Results.BadRequest(new { error = ex.Message });
+        var logger = app.Services.GetRequiredService<ILogger<Program>>();
+        logger.LogError(ex, "Ontology validation error");
+        return Results.Json(new { error = "An error occurred during validation." }, statusCode: 500);
     }
-
-    var validation = OntologyValidator.Validate(store, scope);
-    return Results.Ok(new
-    {
-        scope,
-        validation.Errors
-    });
 });
 
 app.MapGet("/api/ontology/export", async (
@@ -167,7 +183,7 @@ app.MapGet("/api/ontology/export", async (
     string format = http.Request.Query["format"].ToString().ToLowerInvariant();
 
     if (string.IsNullOrWhiteSpace(tenant) || string.IsNullOrWhiteSpace(package) || string.IsNullOrWhiteSpace(channel))
-        return Results.BadRequest(new { error = "Missing required query params: tenant, package, channel." });
+        return Results.Json(new { error = "Missing required query params: tenant, package, channel." }, statusCode: 400);
 
     if (string.IsNullOrWhiteSpace(format))
         format = "jsonld";
@@ -190,12 +206,18 @@ app.MapGet("/api/ontology/export", async (
                 return Results.Text(ttl, "text/turtle");
 
             default:
-                return Results.BadRequest(new { error = $"Unsupported format: {format}. Use jsonld or turtle." });
+                return Results.Json(new { error = $"Unsupported format: {format}. Use jsonld or turtle." }, statusCode: 400);
         }
+    }
+    catch (TenantScopeException ex)
+    {
+        return Results.Json(new { error = ex.Message }, statusCode: 400);
     }
     catch (Exception ex)
     {
-        return Results.Problem(detail: ex.Message, statusCode: 500);
+        var logger = app.Services.GetRequiredService<ILogger<Program>>();
+        logger.LogError(ex, "Ontology export error");
+        return Results.Json(new { error = "An error occurred during export." }, statusCode: 500);
     }
 });
 

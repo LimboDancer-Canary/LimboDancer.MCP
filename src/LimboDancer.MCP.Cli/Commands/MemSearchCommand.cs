@@ -55,23 +55,23 @@ internal static class MemSearchCommand
 
     private static void ApplyTenant(IHost host, string? tenantOpt)
     {
-        var env = host.Services.GetRequiredService<IHostEnvironment>();
-        var cfg = host.Services.GetRequiredService<IConfiguration>();
-        var accessor = host.Services.GetRequiredService<ITenantAccessor>();
-
-        if (!string.IsNullOrWhiteSpace(tenantOpt) && Guid.TryParse(tenantOpt, out var tidFromOpt))
+        if (!string.IsNullOrWhiteSpace(tenantOpt))
         {
-            accessor.TenantId = tidFromOpt;
+            AmbientTenantAccessor.Set(tenantOpt);
             return;
         }
 
+        var env = host.Services.GetRequiredService<IHostEnvironment>();
+        var cfg = host.Services.GetRequiredService<IConfiguration>();
+
         if (env.IsDevelopment())
         {
-            var cfgTenant = cfg["Tenant"];
-            if (Guid.TryParse(cfgTenant, out var tidFromCfg))
+            var cfgTenant = cfg["Tenancy:DefaultTenantId"];
+            if (!string.IsNullOrWhiteSpace(cfgTenant))
             {
-                accessor.TenantId = tidFromCfg;
+                AmbientTenantAccessor.Set(cfgTenant);
             }
         }
     }
+
 }
