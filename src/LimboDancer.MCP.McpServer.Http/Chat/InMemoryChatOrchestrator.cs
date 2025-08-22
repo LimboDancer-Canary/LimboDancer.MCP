@@ -8,17 +8,16 @@ namespace LimboDancer.MCP.McpServer.Http.Chat;
 
 public sealed class InMemoryChatOrchestrator : IChatOrchestrator
 {
-    private readonly ConcurrentDictionary<(string tenantId, string sessionId), Channel<ChatEvent>> _streams = new();
-    private readonly ConcurrentDictionary<(string tenantId, string sessionId), List<(string role, string content)>> _history = new();
-    private readonly ConcurrentDictionary<(string tenantId, string sessionId), SemaphoreSlim> _sessionLocks = new();
+    private readonly ConcurrentDictionary<(string tenantId, string sessionId), SessionState> _sessions = new();
     private readonly ILogger<InMemoryChatOrchestrator> _logger;
+    private readonly SemaphoreSlim _globalLock = new(1, 1);
 
     public InMemoryChatOrchestrator(ILogger<InMemoryChatOrchestrator> logger)
     {
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
 
-    public Task<string> CreateSessionAsync(string tenantId, string? systemPrompt, CancellationToken ct)
+    public async Task<string> CreateSessionAsync(string tenantId, string? systemPrompt, CancellationToken ct)
     {
         if (string.IsNullOrWhiteSpace(tenantId))
             throw new ArgumentException("TenantId cannot be null or empty.", nameof(tenantId));
@@ -26,36 +25,39 @@ public sealed class InMemoryChatOrchestrator : IChatOrchestrator
         var sessionId = Guid.NewGuid().ToString("n");
         var key = (tenantId, sessionId);
 
-        // Create channel with proper error handling
-        var channel = Channel.CreateBounded<ChatEvent>(new BoundedChannelOptions(256)
+        await _globalLock.WaitAsync(ct);
+        try
         {
-            SingleReader = false,
-            SingleWriter = false,
-            FullMode = BoundedChannelFullMode.DropOldest
-        });
+            var state = new SessionState
+            {
+                Channel = Channel.CreateBounded<ChatEvent>(new BoundedChannelOptions(256)
+                {
+                    SingleReader = false,
+                    SingleWriter = false,
+                    FullMode = BoundedChannelFullMode.DropOldest
+                }),
+                History = new List<(string role, string content)>(),
+                Lock = new SemaphoreSlim(1, 1),
+                ActiveProcessing = new ConcurrentDictionary<string, CancellationTokenSource>()
+            };
 
-        if (!_streams.TryAdd(key, channel))
-        {
-            throw new InvalidOperationException($"Failed to create session {sessionId}");
+            if (!string.IsNullOrWhiteSpace(systemPrompt))
+            {
+                state.History.Add(("system", systemPrompt!));
+            }
+
+            if (!_sessions.TryAdd(key, state))
+            {
+                throw new InvalidOperationException($"Failed to create session {sessionId}");
+            }
+
+            _logger.LogInformation("Created session {SessionId} for tenant {TenantId}", sessionId, tenantId);
+            return sessionId;
         }
-
-        var historyList = new List<(string role, string content)>();
-        if (!string.IsNullOrWhiteSpace(systemPrompt))
+        finally
         {
-            historyList.Add(("system", systemPrompt!));
+            _globalLock.Release();
         }
-
-        if (!_history.TryAdd(key, historyList))
-        {
-            // Rollback channel creation
-            _streams.TryRemove(key, out _);
-            throw new InvalidOperationException($"Failed to initialize session history for {sessionId}");
-        }
-
-        _sessionLocks.TryAdd(key, new SemaphoreSlim(1, 1));
-
-        _logger.LogInformation("Created session {SessionId} for tenant {TenantId}", sessionId, tenantId);
-        return Task.FromResult(sessionId);
     }
 
     public async Task<object> GetHistoryAsync(string tenantId, string sessionId, CancellationToken ct)
@@ -67,26 +69,21 @@ public sealed class InMemoryChatOrchestrator : IChatOrchestrator
 
         var key = (tenantId, sessionId);
 
-        if (!_sessionLocks.TryGetValue(key, out var sessionLock))
+        if (!_sessions.TryGetValue(key, out var state))
         {
             _logger.LogWarning("Session {SessionId} not found for tenant {TenantId}", sessionId, tenantId);
             return Array.Empty<object>();
         }
 
-        await sessionLock.WaitAsync(ct);
+        await state.Lock.WaitAsync(ct);
         try
         {
-            if (_history.TryGetValue(key, out var list))
-            {
-                var result = list.Select(x => new { role = x.role, content = x.content }).ToArray();
-                return result;
-            }
-
-            return Array.Empty<object>();
+            var result = state.History.Select(x => new { role = x.role, content = x.content }).ToArray();
+            return result;
         }
         finally
         {
-            sessionLock.Release();
+            state.Lock.Release();
         }
     }
 
@@ -101,45 +98,61 @@ public sealed class InMemoryChatOrchestrator : IChatOrchestrator
 
         var key = (tenantId, sessionId);
 
-        if (!_streams.TryGetValue(key, out var channel))
+        if (!_sessions.TryGetValue(key, out var state))
         {
             throw new InvalidOperationException($"Session {sessionId} not found for tenant {tenantId}.");
-        }
-
-        if (!_sessionLocks.TryGetValue(key, out var sessionLock))
-        {
-            throw new InvalidOperationException($"Session lock not found for {sessionId}.");
         }
 
         var correlationId = Guid.NewGuid().ToString("n");
 
         // Add to history with proper locking
-        await sessionLock.WaitAsync(ct);
+        await state.Lock.WaitAsync(ct);
         try
         {
-            if (_history.TryGetValue(key, out var list))
-            {
-                list.Add((role, content));
-            }
+            state.History.Add((role, content));
         }
         finally
         {
-            sessionLock.Release();
+            state.Lock.Release();
         }
 
-        // Start async processing with proper error handling
-        _ = ProcessMessageAsync(key, sessionId, content, correlationId, channel, sessionLock, ct);
+        // Create cancellation token source for this processing task
+        var processingCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+        state.ActiveProcessing.TryAdd(correlationId, processingCts);
+
+        // Start processing with proper async handling
+        _ = ProcessMessageWithCleanupAsync(key, state, sessionId, content, correlationId, processingCts.Token);
 
         return correlationId;
     }
 
-    private async Task ProcessMessageAsync(
+    private async Task ProcessMessageWithCleanupAsync(
         (string tenantId, string sessionId) key,
+        SessionState state,
         string sessionId,
         string content,
         string correlationId,
-        Channel<ChatEvent> channel,
-        SemaphoreSlim sessionLock,
+        CancellationToken ct)
+    {
+        try
+        {
+            await ProcessMessageAsync(state, sessionId, content, correlationId, ct);
+        }
+        finally
+        {
+            // Clean up the cancellation token source
+            if (state.ActiveProcessing.TryRemove(correlationId, out var cts))
+            {
+                cts.Dispose();
+            }
+        }
+    }
+
+    private async Task ProcessMessageAsync(
+        SessionState state,
+        string sessionId,
+        string content,
+        string correlationId,
         CancellationToken ct)
     {
         try
@@ -147,27 +160,35 @@ public sealed class InMemoryChatOrchestrator : IChatOrchestrator
             // MVP "LLM" stream: echo back tokens with delay
             var text = $"You said: {content}";
 
+            // Use channel writer with cancellation token
+            var writer = state.Channel.Writer;
+
             foreach (var chunk in Chunk(text, 8))
             {
-                await channel.Writer.WriteAsync(new ChatEvent("token", sessionId, chunk, correlationId), ct);
+                ct.ThrowIfCancellationRequested();
+
+                if (!await writer.WaitToWriteAsync(ct))
+                {
+                    _logger.LogWarning("Channel closed while writing token for {CorrelationId}", correlationId);
+                    return;
+                }
+
+                await writer.WriteAsync(new ChatEvent("token", sessionId, chunk, correlationId), ct);
                 await Task.Delay(60, ct);
             }
 
             // Add assistant response to history
-            await sessionLock.WaitAsync(ct);
+            await state.Lock.WaitAsync(ct);
             try
             {
-                if (_history.TryGetValue(key, out var list))
-                {
-                    list.Add(("assistant", text));
-                }
+                state.History.Add(("assistant", text));
             }
             finally
             {
-                sessionLock.Release();
+                state.Lock.Release();
             }
 
-            await channel.Writer.WriteAsync(new ChatEvent("message.completed", sessionId, text, correlationId), ct);
+            await writer.WriteAsync(new ChatEvent("message.completed", sessionId, text, correlationId), ct);
 
             _logger.LogDebug("Completed processing message {CorrelationId} for session {SessionId}",
                 correlationId, sessionId);
@@ -175,12 +196,11 @@ public sealed class InMemoryChatOrchestrator : IChatOrchestrator
         catch (OperationCanceledException)
         {
             _logger.LogInformation("Message processing canceled for correlation {CorrelationId}", correlationId);
-            // Send cancellation event
+            // Send cancellation event with best effort
             try
             {
-                await channel.Writer.WriteAsync(
-                    new ChatEvent("error", sessionId, null, correlationId, "canceled", "Operation was canceled"),
-                    CancellationToken.None);
+                await state.Channel.Writer.TryWriteAsync(
+                    new ChatEvent("error", sessionId, null, correlationId, "canceled", "Operation was canceled"));
             }
             catch { /* Best effort */ }
         }
@@ -189,12 +209,11 @@ public sealed class InMemoryChatOrchestrator : IChatOrchestrator
             _logger.LogError(ex, "Error processing message {CorrelationId} for session {SessionId}",
                 correlationId, sessionId);
 
-            // Send error event
+            // Send error event with best effort
             try
             {
-                await channel.Writer.WriteAsync(
-                    new ChatEvent("error", sessionId, null, correlationId, "orchestrator_error", ex.Message),
-                    CancellationToken.None);
+                await state.Channel.Writer.TryWriteAsync(
+                    new ChatEvent("error", sessionId, null, correlationId, "orchestrator_error", ex.Message));
             }
             catch (Exception writeEx)
             {
@@ -215,7 +234,7 @@ public sealed class InMemoryChatOrchestrator : IChatOrchestrator
 
         var key = (tenantId, sessionId);
 
-        if (!_streams.TryGetValue(key, out var channel))
+        if (!_sessions.TryGetValue(key, out var state))
         {
             _logger.LogWarning("Attempted to subscribe to non-existent session {SessionId} for tenant {TenantId}",
                 sessionId, tenantId);
@@ -224,11 +243,11 @@ public sealed class InMemoryChatOrchestrator : IChatOrchestrator
 
         // Start heartbeat with proper cancellation
         using var heartbeatCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
-        var heartbeatTask = SendHeartbeatAsync(channel, sessionId, heartbeatCts.Token);
+        var heartbeatTask = SendHeartbeatAsync(state.Channel, sessionId, heartbeatCts.Token);
 
         try
         {
-            await foreach (var item in channel.Reader.ReadAllAsync(ct))
+            await foreach (var item in state.Channel.Reader.ReadAllAsync(ct))
             {
                 yield return item;
             }
@@ -249,12 +268,17 @@ public sealed class InMemoryChatOrchestrator : IChatOrchestrator
 
     private async Task SendHeartbeatAsync(Channel<ChatEvent> channel, string sessionId, CancellationToken ct)
     {
+        using var timer = new PeriodicTimer(TimeSpan.FromSeconds(15));
+
         try
         {
-            while (!ct.IsCancellationRequested)
+            while (await timer.WaitForNextTickAsync(ct))
             {
-                await channel.Writer.WriteAsync(new ChatEvent("ping", sessionId), ct);
-                await Task.Delay(TimeSpan.FromSeconds(15), ct);
+                if (!channel.Writer.TryWrite(new ChatEvent("ping", sessionId)))
+                {
+                    _logger.LogDebug("Failed to write heartbeat for session {SessionId}", sessionId);
+                    break;
+                }
             }
         }
         catch (OperationCanceledException)
@@ -273,5 +297,40 @@ public sealed class InMemoryChatOrchestrator : IChatOrchestrator
 
         for (int i = 0; i < s.Length; i += n)
             yield return s.Substring(i, Math.Min(n, s.Length - i));
+    }
+
+    // Cleanup method to dispose of sessions
+    public void Dispose()
+    {
+        foreach (var (key, state) in _sessions)
+        {
+            // Cancel all active processing
+            foreach (var (_, cts) in state.ActiveProcessing)
+            {
+                try
+                {
+                    cts.Cancel();
+                    cts.Dispose();
+                }
+                catch { }
+            }
+
+            // Complete the channel
+            state.Channel.Writer.TryComplete();
+
+            // Dispose the lock
+            state.Lock.Dispose();
+        }
+
+        _sessions.Clear();
+        _globalLock.Dispose();
+    }
+
+    private sealed class SessionState
+    {
+        public required Channel<ChatEvent> Channel { get; init; }
+        public required List<(string role, string content)> History { get; init; }
+        public required SemaphoreSlim Lock { get; init; }
+        public required ConcurrentDictionary<string, CancellationTokenSource> ActiveProcessing { get; init; }
     }
 }

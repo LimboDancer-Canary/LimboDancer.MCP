@@ -34,6 +34,7 @@ builder.Services.AddControllers();
 
 // Chat orchestrator (MVP)
 builder.Services.AddSingleton<IChatOrchestrator, InMemoryChatOrchestrator>();
+builder.Services.AddHostedService<ChatOrchestratorCleanupService>();
 
 // OpenAPI (dev only)
 builder.Services.AddOpenApi();
