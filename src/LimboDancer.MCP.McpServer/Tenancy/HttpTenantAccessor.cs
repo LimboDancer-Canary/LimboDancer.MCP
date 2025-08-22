@@ -6,10 +6,10 @@ namespace LimboDancer.MCP.McpServer.Tenancy;
 
 /// <summary>
 /// Resolves the current TenantId (and optional package/channel hints) from HTTP headers or defaults.
-/// Headers:
-///   x-tenant-id: guid
-///   x-tenant-package: string
-///   x-tenant-channel: string
+/// Headers (case-insensitive):
+///   X-Tenant-Id: guid
+///   X-Tenant-Package: string
+///   X-Tenant-Channel: string
 /// </summary>
 public sealed class HttpTenantAccessor : ITenantAccessor
 {
@@ -29,7 +29,7 @@ public sealed class HttpTenantAccessor : ITenantAccessor
             var ctx = _http.HttpContext;
             if (ctx?.Request?.Headers is null) return _opts.DefaultTenantId.ToString();
 
-            if (ctx.Request.Headers.TryGetValue("x-tenant-id", out var v) &&
+            if (ctx.Request.Headers.TryGetValue(TenantHeaders.TenantId, out var v) &&
                 Guid.TryParse(v.ToString(), out var g))
                 return g.ToString();
 
@@ -37,16 +37,17 @@ public sealed class HttpTenantAccessor : ITenantAccessor
         }
     }
 
-    public bool IsDevelopment => false; // TODO: Add IHostEnvironment dependency if needed
+    public bool IsDevelopment => false; // unchanged
 
-    // These may not be part of the ITenantAccessor interface; exposed via explicit getters for convenience if present.
     public string? Package
     {
         get
         {
             var ctx = _http.HttpContext;
             if (ctx?.Request?.Headers is null) return _opts.DefaultPackage;
-            return ctx.Request.Headers.TryGetValue("x-tenant-package", out var v) ? v.ToString() : _opts.DefaultPackage;
+            return ctx.Request.Headers.TryGetValue(TenantHeaders.Package, out var v)
+                ? v.ToString()
+                : _opts.DefaultPackage;
         }
     }
 
@@ -56,7 +57,9 @@ public sealed class HttpTenantAccessor : ITenantAccessor
         {
             var ctx = _http.HttpContext;
             if (ctx?.Request?.Headers is null) return _opts.DefaultChannel;
-            return ctx.Request.Headers.TryGetValue("x-tenant-channel", out var v) ? v.ToString() : _opts.DefaultChannel;
+            return ctx.Request.Headers.TryGetValue(TenantHeaders.Channel, out var v)
+                ? v.ToString()
+                : _opts.DefaultChannel;
         }
     }
 }

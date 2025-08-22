@@ -4,7 +4,7 @@ using Microsoft.Extensions.Options;
 namespace LimboDancer.MCP.BlazorConsole.Services;
 
 /// <summary>
-/// Ensures the tenant header is present on outgoing requests unless already supplied explicitly.
+/// Delegating handler that ensures the tenant header is present on outgoing requests.
 /// </summary>
 public sealed class TenantHeaderHandler : DelegatingHandler
 {
@@ -22,7 +22,8 @@ public sealed class TenantHeaderHandler : DelegatingHandler
         var headerName = _options.Value.TenantHeaderName ?? TenantHeaders.TenantId;
         var tenantId = _tenant.CurrentTenantId;
 
-        if (!string.IsNullOrWhiteSpace(tenantId) && !request.Headers.Contains(headerName))
+        if (!string.IsNullOrWhiteSpace(tenantId) &&
+            !request.Headers.Contains(headerName))
         {
             request.Headers.TryAddWithoutValidation(headerName, tenantId);
         }

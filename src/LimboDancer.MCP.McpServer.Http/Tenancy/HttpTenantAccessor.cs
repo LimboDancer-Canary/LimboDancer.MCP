@@ -6,7 +6,6 @@ using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
-using LimboDancer.MCP.Core.Tenancy;
 
 namespace LimboDancer.MCP.McpServer.Http.Tenancy
 {
@@ -14,7 +13,7 @@ namespace LimboDancer.MCP.McpServer.Http.Tenancy
     {
         private const string TenantClaimType = "tenant_id";
         private const string DeprecatedTenantClaimType = "tid";
-        private const string TenantHeaderName = "X-Tenant-Id";
+        // Removed local TenantHeaderName constant; use TenantHeaders.TenantId
         private const string HttpItemsKey = "__mcp_tenant_id";
 
         private readonly IHttpContextAccessor _httpContextAccessor;
@@ -65,20 +64,20 @@ namespace LimboDancer.MCP.McpServer.Http.Tenancy
                 {
                     deprecatedClaim = deprecatedClaim!.Trim();
                     httpContext.Items[HttpItemsKey] = deprecatedClaim;
-                    _logger.LogWarning("Resolved tenant from deprecated claim '{ClaimType}'. Please migrate to '{Preferred}'.",
+                    _logger.LogWarning("Resolved tenant from deprecated claim '{ClaimType}'. Preferred: '{Preferred}'.",
                         DeprecatedTenantClaimType, TenantClaimType);
                     return deprecatedClaim;
                 }
 
                 if (IsDevelopment)
                 {
-                    if (httpContext.Request.Headers.TryGetValue(TenantHeaderName, out var headerValues))
+                    if (httpContext.Request.Headers.TryGetValue(TenantHeaders.TenantId, out var headerValues))
                     {
                         var tenantFromHeader = headerValues.FirstOrDefault()?.Trim();
                         if (!string.IsNullOrWhiteSpace(tenantFromHeader))
                         {
                             httpContext.Items[HttpItemsKey] = tenantFromHeader!;
-                            _logger.LogWarning("Resolved tenant from '{Header}' header in Development.", TenantHeaderName);
+                            _logger.LogWarning("Resolved tenant from header '{Header}' in Development.", TenantHeaders.TenantId);
                             return tenantFromHeader!;
                         }
                     }

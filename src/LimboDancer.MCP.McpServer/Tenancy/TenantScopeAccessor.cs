@@ -5,10 +5,7 @@ using Microsoft.Extensions.Options;
 namespace LimboDancer.MCP.McpServer.Tenancy;
 
 /// <summary>
-/// Default implementation that builds a TenantScope from:
-/// - TenantId via ITenantAccessor (x-tenant-id or configured default)
-/// - Package via header x-tenant-package or configured default
-/// - Channel via header x-tenant-channel or configured default
+/// Builds a TenantScope from headers or defaults.
 /// </summary>
 public sealed class TenantScopeAccessor : ITenantScopeAccessor
 {
@@ -29,20 +26,17 @@ public sealed class TenantScopeAccessor : ITenantScopeAccessor
     public TenantScope GetCurrentScope()
     {
         var tenantId = _tenantAccessor.TenantId;
-
-        // Read package/channel in a typed way (no dynamic)
         var ctx = _http.HttpContext;
         var headers = ctx?.Request?.Headers;
 
-        var package = headers is not null && headers.TryGetValue("x-tenant-package", out var p)
+        var package = headers is not null && headers.TryGetValue(TenantHeaders.Package, out var p)
             ? p.ToString()
             : _options.DefaultPackage;
 
-        var channel = headers is not null && headers.TryGetValue("x-tenant-channel", out var c)
+        var channel = headers is not null && headers.TryGetValue(TenantHeaders.Channel, out var c)
             ? c.ToString()
             : _options.DefaultChannel;
 
-        // Construct a TenantScope with validated values
         if (string.IsNullOrWhiteSpace(package)) package = _options.DefaultPackage;
         if (string.IsNullOrWhiteSpace(channel)) channel = _options.DefaultChannel;
 

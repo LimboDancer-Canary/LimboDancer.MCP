@@ -1,4 +1,5 @@
-﻿using Microsoft.Extensions.Options;
+﻿using LimboDancer.MCP.Core.Tenancy;
+using Microsoft.Extensions.Options;
 using System.Net.Http.Headers;
 using System.Text;
 using System.Text.Json;
@@ -8,7 +9,7 @@ namespace LimboDancer.MCP.BlazorConsole.Services;
 public sealed class OntologyApiOptions
 {
     public string? BaseUrl { get; set; }
-    public string TenantHeaderName { get; set; } = "X-Tenant-Id";
+    public string TenantHeaderName { get; set; } = TenantHeaders.TenantId;
     public int TimeoutSeconds { get; set; } = 10;
 }
 
@@ -98,17 +99,7 @@ public sealed class OntologyValidationService : IOntologyValidationService
 
     private static async Task<HttpRequestException> ToHttpRequestExceptionAsync(HttpResponseMessage resp, string op)
     {
-        var status = (int)resp.StatusCode;
-        var reason = resp.ReasonPhrase ?? resp.StatusCode.ToString();
-        string body = "";
-        try { body = await resp.Content.ReadAsStringAsync(); } catch { /* ignore */ }
-
-        var msg = status switch
-        {
-            404 => $"[{op}] Endpoint not found (404).",
-            400 => $"[{op}] Bad request (400). Body: {body}",
-            _ => $"[{op}] HTTP {(int)resp.StatusCode} ({reason}). Body: {body}"
-        };
-        return new HttpRequestException(msg);
+        var body = await resp.Content.ReadAsStringAsync();
+        return new HttpRequestException($"Failed to {op}: {(int)resp.StatusCode} {resp.ReasonPhrase}. Body: {body}");
     }
 }
