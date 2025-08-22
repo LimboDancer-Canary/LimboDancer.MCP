@@ -96,9 +96,10 @@ namespace LimboDancer.MCP.Vector.AzureSearch.Models
 
         /// <summary>
         /// Embedding vector for the content. Dimension must match the index profile.
+        /// Note: VectorSearchDimensions is set dynamically in SearchIndexBuilder.
         /// </summary>
         [JsonPropertyName("contentVector")]
-        [SearchField(VectorSearchDimensions = 1536, VectorSearchProfileName = DefaultVectorProfile, DataType = SearchFieldDataType.Collection(SearchFieldDataType.Single))]
+        [SearchField(VectorSearchProfileName = DefaultVectorProfile, DataType = SearchFieldDataType.Collection(SearchFieldDataType.Single))]
         public float[] ContentVector { get; set; } = Array.Empty<float>();
 
         /// <summary>

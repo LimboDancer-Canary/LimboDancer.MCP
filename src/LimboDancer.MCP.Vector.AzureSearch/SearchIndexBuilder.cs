@@ -9,10 +9,6 @@
 using Azure;
 using Azure.Search.Documents.Indexes;
 using Azure.Search.Documents.Indexes.Models;
-using System;
-using System.ComponentModel.DataAnnotations;
-using System.Threading;
-using System.Threading.Tasks;
 using MemoryDoc = LimboDancer.MCP.Vector.AzureSearch.Models.MemoryDoc;
 
 namespace LimboDancer.MCP.Vector.AzureSearch
@@ -22,12 +18,13 @@ namespace LimboDancer.MCP.Vector.AzureSearch
         public const string DefaultIndexName = "ldm-memory";
         public const string DefaultVectorProfile = "ldm-vector-profile";
         public const string DefaultSemanticConfig = "ldm-semantic";
+        public const int DefaultVectorDimensions = 1536;
 
         // ---- Public API remains the same ----
         public static Task EnsureIndexAsync(
             SearchIndexClient client,
             string? indexName = null,
-            int vectorDimensions = 1536,
+            int vectorDimensions = DefaultVectorDimensions,
             string? semanticConfigName = null,
             CancellationToken ct = default)
         {
@@ -111,5 +108,6 @@ namespace LimboDancer.MCP.Vector.AzureSearch
                         new SemanticField(nameof(MemoryDoc.Tags))
                     }
                 }));
+        }
     }
 }

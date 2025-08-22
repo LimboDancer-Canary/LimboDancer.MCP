@@ -1,12 +1,4 @@
 #pragma warning disable CS1591 // Missing XML comment for publicly visible type or member
-using System.ComponentModel;
-using Gremlin.Net.Driver;
-using Gremlin.Net.Driver.Remote;
-using Gremlin.Net.Structure.IO.GraphSON;
-using Microsoft.Extensions.Configuration;
-using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.Options;
-
 namespace LimboDancer.MCP.Graph.CosmosGremlin;
 
 public interface IGremlinClientFactory
@@ -91,22 +83,4 @@ public sealed class GremlinClientFactory : IGremlinClientFactory
     }
 }
 
-/// <summary>
-/// Extension methods for dependency injection configuration.
-/// </summary>
-public static class ServiceCollectionExtensions
-{
-    /// <summary>
-    /// DI helper registration for Cosmos Gremlin client factory.
-    /// </summary>
-    public static IServiceCollection AddCosmosGremlin(
-        this IServiceCollection services,
-        IConfiguration config,
-        string sectionName = "CosmosGremlin")
-    {
-        services.Configure<GremlinOptions>(config.GetSection(sectionName));
-        services.AddSingleton<IGremlinClientFactory, GremlinClientFactory>();
-        return services;
-    }
-}
 #pragma warning restore CS1591
