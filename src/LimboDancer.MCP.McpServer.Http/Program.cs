@@ -1,5 +1,7 @@
 using LimboDancer.MCP.McpServer.Http.Chat;
 using LimboDancer.MCP.McpServer.Http.Infrastructure;
+using LimboDancer.MCP.Storage;
+using Microsoft.EntityFrameworkCore;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -7,6 +9,9 @@ builder.Services.AddHttpContextAccessor();
 
 // Tenancy accessor is already registered in your code as Core.Tenancy.ITenantAccessor
 builder.Services.AddScoped<LimboDancer.MCP.Core.Tenancy.ITenantAccessor, LimboDancer.MCP.McpServer.Http.Tenancy.HttpTenantAccessor>();
+
+// Storage
+builder.Services.AddStorage(builder.Configuration);
 
 // AuthN/AuthZ
 builder.Services.AddApiAuthentication(builder.Configuration);
@@ -49,7 +54,34 @@ app.UseAuthorization();
 
 app.MapControllers();
 
-// Example existing endpoint
+// Health endpoints
 app.MapGet("/health", () => Results.Ok(new { status = "ok" }));
+
+app.MapGet("/ready", async (IServiceProvider sp) =>
+{
+    try
+    {
+        // Check database connectivity
+        using var scope = sp.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ChatDbContext>();
+        var canConnect = await dbContext.Database.CanConnectAsync();
+
+        if (!canConnect)
+            return Results.Json(new { status = "not ready", database = "disconnected" }, statusCode: 503);
+
+        // Initialize persistence if configured
+        var config = sp.GetRequiredService<IConfiguration>();
+        if (config.GetValue<bool>("Storage:ApplyMigrationsAtStartup"))
+        {
+            await dbContext.Database.MigrateAsync();
+        }
+
+        return Results.Ok(new { status = "ready", database = "connected" });
+    }
+    catch (Exception ex)
+    {
+        return Results.Json(new { status = "not ready", error = ex.Message }, statusCode: 503);
+    }
+});
 
 app.Run();
