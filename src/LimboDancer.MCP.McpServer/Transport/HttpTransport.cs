@@ -14,7 +14,7 @@ namespace LimboDancer.MCP.McpServer.Transport;
 [ApiController]
 [Route("api/mcp")]
 [Authorize]
-public class McpController : ControllerBase
+public partial class McpController : ControllerBase
 {
     private readonly McpServer _mcpServer;
     private readonly ITenantAccessor _tenantAccessor;

@@ -6,10 +6,13 @@
 	</PropertyGroup>
 
 	<ItemGroup>
+		<!-- Gremlin 3.7.2 requires Polly >= 8.3.1 -->
 		<PackageReference Include="Gremlin.Net" Version="3.7.2" />
-		<PackageReference Include="Microsoft.Extensions.Options.ConfigurationExtensions" Version="8.0.0" />
-		<PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions" Version="8.0.0" />
-		<PackageReference Include="Polly" Version="8.2.0" />
+		<PackageReference Include="Polly" Version="8.3.1" />
+		<!-- Use the .NET 9 line for Extensions packages to match Core -->
+		<PackageReference Include="Microsoft.Extensions.Options.ConfigurationExtensions" Version="9.0.0" />
+		<PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions" Version="9.0.0" />
+		
 	</ItemGroup>
 
 	<ItemGroup>
