@@ -21,7 +21,7 @@ public sealed class ChatStreamEndpoint : ControllerBase
     [HttpGet("sessions/{sessionId}/stream")]
     public async Task GetStream([FromRoute] string tenantId, [FromRoute] string sessionId, CancellationToken ct)
     {
-        if (tenantId != _tenant.TenantId) { Response.StatusCode = 403; return; }
+        if (tenantId != _tenant.TenantId.ToString()) { Response.StatusCode = 403; return; }
 
         Response.ContentType = "text/event-stream";
         Response.Headers["Cache-Control"] = "no-store";

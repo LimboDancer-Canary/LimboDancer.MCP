@@ -199,8 +199,8 @@ public sealed class InMemoryChatOrchestrator : IChatOrchestrator
             // Send cancellation event with best effort
             try
             {
-                await state.Channel.Writer.TryWriteAsync(
-                    new ChatEvent("error", sessionId, null, correlationId, "canceled", "Operation was canceled"));
+                await state.Channel.Writer.WriteAsync(
+                    new ChatEvent("error", sessionId, null, correlationId, "canceled", "Operation was canceled"), ct);
             }
             catch { /* Best effort */ }
         }
@@ -212,8 +212,8 @@ public sealed class InMemoryChatOrchestrator : IChatOrchestrator
             // Send error event with best effort
             try
             {
-                await state.Channel.Writer.TryWriteAsync(
-                    new ChatEvent("error", sessionId, null, correlationId, "orchestrator_error", ex.Message));
+                await state.Channel.Writer.WriteAsync(
+                    new ChatEvent("error", sessionId, null, correlationId, "orchestrator_error", ex.Message), ct);
             }
             catch (Exception writeEx)
             {
