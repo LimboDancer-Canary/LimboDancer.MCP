@@ -20,7 +20,7 @@ public sealed class TenantHeaderHandler : DelegatingHandler
     protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
     {
         var headerName = _options.Value.TenantHeaderName ?? TenantHeaders.TenantId;
-        var tenantId = _tenant.CurrentTenantId;
+        var tenantId = _tenant.TenantId?.ToString();
 
         if (!string.IsNullOrWhiteSpace(tenantId) &&
             !request.Headers.Contains(headerName))

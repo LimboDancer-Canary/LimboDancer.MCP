@@ -11,7 +11,7 @@
 else
 {
     <div class="searchpanel">
-        <input class="text" @bind="query" placeholder="Query text�" />
+        <input class="text" @bind="query" placeholder="Query text…" />
         <input class="text" @bind="tag" placeholder="Filter tag (equals) e.g. kind:vector" />
         <input class="text" @bind="sourceId" placeholder="Filter SourceId (equals)" />
         <button class="btn" @onclick="DoSearchAsync">Search</button>
@@ -19,7 +19,7 @@ else
 
     @if (busy)
     {
-        <p>Searching�</p>
+        <p>Searching…</p>
     }
     else if (results is null)
     {
@@ -51,7 +51,7 @@ else
                             <td>@r.Doc.Id</td>
                             <td>@r.Doc.SourceId</td>
                             <td>@r.Doc.Tags</td>
-                            <td>@(r.Doc.Content?.Length > 180 ? r.Doc.Content[..180] + "�" : r.Doc.Content)</td>
+                            <td>@(r.Doc.Content?.Length > 180 ? r.Doc.Content[..180] + "…" : r.Doc.Content)</td>
                         </tr>
                     }
                 }
@@ -79,8 +79,19 @@ else
         {
             Size = 50
         };
-        options.Select.AddRange(new[] { "id", "content", "tags", "sourceId" });
-        options.SearchFields.AddRange(new[] { "content", "tags", "sourceId" });
+
+        // Convert IList<string> to List<string> for AddRange
+        var selectFields = new List<string> { "id", "content", "tags", "sourceId" };
+        foreach (var field in selectFields)
+        {
+            options.Select.Add(field);
+        }
+
+        var searchFields = new List<string> { "content", "tags", "sourceId" };
+        foreach (var field in searchFields)
+        {
+            options.SearchFields.Add(field);
+        }
 
         var filters = new List<string>();
 

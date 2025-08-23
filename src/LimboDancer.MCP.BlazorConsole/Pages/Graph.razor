@@ -1,4 +1,5 @@
 @page "/graph"
+@using Gremlin.Net.Driver
 @inject IGremlinClientFactory GremlinFactory
 
 <h3>Graph (Cosmos Gremlin)</h3>
@@ -116,14 +117,16 @@ else
         selectedVertexId = null;
 
         using var client = GremlinFactory.Create();
-        // Tenant-scoped vertex query
+
+        // Tenant-scoped vertex query using the same pattern as GraphStore
         var gremlin = "g.V().has('tenantId', tid).hasLabel(lbl).limit(100).project('id','label').by(id()).by(label())";
-        var bindings = new Dictionary<string, object?>
+        var bindings = new Dictionary<string, object>
         {
             ["lbl"] = label ?? "",
             ["tid"] = TenantState.TenantId!.Value.ToString()
         };
-        var rs = await client.SubmitAsync<dynamic>(gremlin, bindings);
+
+        var rs = await client.SubmitAsync<dynamic>(gremlin, bindings, cancellationToken: CancellationToken.None);
 
         foreach (var row in rs)
         {
@@ -147,12 +150,13 @@ else
 
         // Tenant-scoped edge traversal starting from tenant-scoped vertex
         var gremlin = "g.V(vid).has('tenantId', tid).outE().limit(50).project('edgeLabel','inV').by(label()).by(inV().id())";
-        var bindings = new Dictionary<string, object?>
+        var bindings = new Dictionary<string, object>
         {
             ["vid"] = id,
             ["tid"] = TenantState.TenantId!.Value.ToString()
         };
-        var rs = await client.SubmitAsync<dynamic>(gremlin, bindings);
+
+        var rs = await client.SubmitAsync<dynamic>(gremlin, bindings, cancellationToken: CancellationToken.None);
 
         foreach (var row in rs)
         {
