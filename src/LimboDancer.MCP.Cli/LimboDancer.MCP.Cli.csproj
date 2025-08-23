@@ -15,6 +15,8 @@
 		<PackageReference Include="Microsoft.EntityFrameworkCore.Design" Version="9.0.0">
 			<PrivateAssets>all</PrivateAssets>
 		</PackageReference>
+		<!-- Add missing hosting package -->
+		<PackageReference Include="Microsoft.Extensions.Hosting" Version="9.0.5" />
 	</ItemGroup>
 
 	<ItemGroup>
@@ -22,5 +24,7 @@
 		<ProjectReference Include="..\LimboDancer.MCP.Storage\LimboDancer.MCP.Storage.csproj" />
 		<ProjectReference Include="..\LimboDancer.MCP.Vector.AzureSearch\LimboDancer.MCP.Vector.AzureSearch.csproj" />
 		<ProjectReference Include="..\LimboDancer.MCP.Graph.CosmosGremlin\LimboDancer.MCP.Graph.CosmosGremlin.csproj" />
+		<!-- Add missing project reference -->
+		<ProjectReference Include="..\LimboDancer.MCP.McpServer\LimboDancer.MCP.McpServer.csproj" />
 	</ItemGroup>
 </Project>

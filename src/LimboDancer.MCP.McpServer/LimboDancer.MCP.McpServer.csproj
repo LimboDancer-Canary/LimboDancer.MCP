@@ -14,20 +14,39 @@
 	</ItemGroup>
 
 	<ItemGroup>
+		<!-- Model Context Protocol -->
+		<PackageReference Include="Microsoft.AspNetCore.Authentication.JwtBearer" Version="9.0.8" />
+		<PackageReference Include="ModelContextProtocol" Version="0.3.0-preview.3" />
+
+		<!-- Microsoft.Extensions.AI for LLM abstractions -->
+		<PackageReference Include="Microsoft.Extensions.AI" Version="9.0.0-preview.9.24556.5" />
+
+		<!-- Serilog for structured logging -->
+		<PackageReference Include="Serilog.AspNetCore" Version="8.0.1" />
+
+		<!-- OpenTelemetry packages -->
+		<PackageReference Include="OpenTelemetry" Version="1.10.0" />
+		<PackageReference Include="OpenTelemetry.Api" Version="1.10.0" />
+		<PackageReference Include="OpenTelemetry.Extensions.Hosting" Version="1.10.0" />
+		<PackageReference Include="OpenTelemetry.Instrumentation.AspNetCore" Version="1.10.1" />
+		<PackageReference Include="OpenTelemetry.Instrumentation.Http" Version="1.10.0" />
+		<PackageReference Include="OpenTelemetry.Exporter.Console" Version="1.10.0" />
+		<PackageReference Include="OpenTelemetry.Exporter.OpenTelemetryProtocol" Version="1.10.0" />
+
 		<!-- Version alignment to avoid NU1605/NU1608 -->
-		<PackageReference Include="Polly" Version="8.3.1" />
+		<PackageReference Include="Microsoft.Extensions.Http.Polly" Version="9.0.5" />
 		<PackageReference Include="Azure.Search.Documents" Version="11.6.1" />
-		<!-- If you reference any Microsoft.Extensions packages directly, keep them on 9.0.0 -->
-		 <PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions" Version="9.0.0" /> 
-		 <PackageReference Include="Microsoft.Extensions.Options.ConfigurationExtensions" Version="9.0.0" /> 
+		<!-- Keep Microsoft.Extensions packages aligned with transitive dependencies -->
+		<PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions" Version="9.0.5" />
+		<PackageReference Include="Microsoft.Extensions.Options.ConfigurationExtensions" Version="9.0.5" />
 	</ItemGroup>
 
 	<ItemGroup>
 		<ProjectReference Include="..\LimboDancer.MCP.Core\LimboDancer.MCP.Core.csproj" />
+		<ProjectReference Include="..\LimboDancer.MCP.Ontology\LimboDancer.MCP.Ontology.csproj" />
 		<ProjectReference Include="..\LimboDancer.MCP.Storage\LimboDancer.MCP.Storage.csproj" />
 		<ProjectReference Include="..\LimboDancer.MCP.Vector.AzureSearch\LimboDancer.MCP.Vector.AzureSearch.csproj" />
 		<ProjectReference Include="..\LimboDancer.MCP.Graph.CosmosGremlin\LimboDancer.MCP.Graph.CosmosGremlin.csproj" />
-
 	</ItemGroup>
 
 </Project>

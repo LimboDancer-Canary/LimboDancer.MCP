@@ -4,7 +4,6 @@ using Microsoft.Extensions.Hosting;
 using LimboDancer.MCP.Core.Tenancy;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
-using LimboDancer.MCP.McpServer;
 using LimboDancer.MCP.McpServer.Transport;
 
 namespace LimboDancer.MCP.Cli.Commands;
@@ -29,31 +28,29 @@ internal static class ServeCommand
         cmd.SetHandler(async (bool useStdio, string? tenantOpt, string? pkg, string? chan, bool verbose) =>
         {
             // Build the host with MCP server registered
-            var hostBuilder = Bootstrap.CreateHostBuilder()
-                .ConfigureServices((context, services) =>
+            var hostBuilder = Host.CreateApplicationBuilder();
+
+            // Configure services
+            hostBuilder.Services.AddSingleton<LimboDancer.MCP.McpServer.McpServer>();
+
+            // Configure logging
+            hostBuilder.Services.AddLogging(logging =>
+            {
+                logging.ClearProviders();
+
+                if (useStdio)
                 {
-                    // Add MCP server
-                    services.AddSingleton<McpServer>();
-
-                    // Configure logging
-                    services.AddLogging(logging =>
-                    {
-                        logging.ClearProviders();
-
-                        if (useStdio)
-                        {
-                            // In stdio mode, only log errors to stderr
-                            logging.AddFilter("*", verbose ? LogLevel.Debug : LogLevel.Error);
-                            logging.AddProvider(new StderrLoggerProvider());
-                        }
-                        else
-                        {
-                            // In HTTP mode, use normal console logging
-                            logging.AddConsole();
-                            logging.SetMinimumLevel(verbose ? LogLevel.Debug : LogLevel.Information);
-                        }
-                    });
-                });
+                    // In stdio mode, only log errors to stderr
+                    logging.AddFilter("*", verbose ? LogLevel.Debug : LogLevel.Error);
+                    logging.AddProvider(new StderrLoggerProvider());
+                }
+                else
+                {
+                    // In HTTP mode, use normal console logging
+                    logging.AddConsole();
+                    logging.SetMinimumLevel(verbose ? LogLevel.Debug : LogLevel.Information);
+                }
+            });
 
             using var host = hostBuilder.Build();
 
@@ -78,7 +75,7 @@ internal static class ServeCommand
     private static async Task RunStdioModeAsync(IHost host)
     {
         var logger = host.Services.GetRequiredService<ILogger<StdioTransport>>();
-        var mcpServer = host.Services.GetRequiredService<McpServer>();
+        var mcpServer = host.Services.GetRequiredService<LimboDancer.MCP.McpServer.McpServer>();
 
         try
         {
@@ -99,10 +96,18 @@ internal static class ServeCommand
 
     private static void ApplyTenant(IHost host, string? tenantOpt)
     {
+        var tenantAccessor = host.Services.GetRequiredService<ITenantAccessor>();
+
         if (!string.IsNullOrWhiteSpace(tenantOpt))
         {
-            AmbientTenantAccessor.Set(tenantOpt);
-            return;
+            if (Guid.TryParse(tenantOpt, out var tenantGuid))
+            {
+                if (tenantAccessor is AmbientTenantAccessor)
+                {
+                    AmbientTenantAccessor.Set(tenantGuid);
+                }
+                return;
+            }
         }
 
         var env = host.Services.GetRequiredService<IHostEnvironment>();
@@ -111,58 +116,13 @@ internal static class ServeCommand
         if (env.IsDevelopment())
         {
             var cfgTenant = cfg["Tenancy:DefaultTenantId"];
-            if (!string.IsNullOrWhiteSpace(cfgTenant))
+            if (!string.IsNullOrWhiteSpace(cfgTenant) && Guid.TryParse(cfgTenant, out var guid))
             {
-                AmbientTenantAccessor.Set(cfgTenant);
+                if (tenantAccessor is AmbientTenantAccessor)
+                {
+                    AmbientTenantAccessor.Set(guid);
+                }
             }
         }
-    }
-}
-
-/// <summary>
-/// Logger provider that writes to stderr for stdio mode.
-/// </summary>
-internal class StderrLoggerProvider : ILoggerProvider
-{
-    public ILogger CreateLogger(string categoryName)
-    {
-        return new StderrLogger(categoryName);
-    }
-
-    public void Dispose() { }
-}
-
-internal class StderrLogger : ILogger
-{
-    private readonly string _categoryName;
-
-    public StderrLogger(string categoryName)
-    {
-        _categoryName = categoryName;
-    }
-
-    public IDisposable BeginScope<TState>(TState state) => NullScope.Instance;
-
-    public bool IsEnabled(LogLevel logLevel) => true;
-
-    public void Log<TState>(LogLevel logLevel, EventId eventId, TState state, Exception? exception, Func<TState, Exception?, string> formatter)
-    {
-        if (formatter != null)
-        {
-            var message = formatter(state, exception);
-            var timestamp = DateTime.UtcNow.ToString("yyyy-MM-dd HH:mm:ss");
-            Console.Error.WriteLine($"[{timestamp}] [{logLevel}] {_categoryName}: {message}");
-
-            if (exception != null)
-            {
-                Console.Error.WriteLine(exception.ToString());
-            }
-        }
-    }
-
-    private class NullScope : IDisposable
-    {
-        public static NullScope Instance = new();
-        public void Dispose() { }
     }
 }

@@ -2,6 +2,7 @@
 using LimboDancer.MCP.Core.Tenancy;
 using LimboDancer.MCP.Graph.CosmosGremlin;
 using LimboDancer.MCP.McpServer;
+using LimboDancer.MCP.McpServer.Configuration;
 using LimboDancer.MCP.McpServer.DependencyInjection;
 using LimboDancer.MCP.McpServer.Graph;
 using LimboDancer.MCP.McpServer.Storage;
@@ -14,12 +15,14 @@ using LimboDancer.MCP.Ontology.Mapping;
 using LimboDancer.MCP.Ontology.Repositories;
 using LimboDancer.MCP.Ontology.Runtime;
 using LimboDancer.MCP.Ontology.Store;
+using LimboDancer.MCP.Ontology.Validation;
 using LimboDancer.MCP.Storage;
 using LimboDancer.MCP.Vector.AzureSearch;
+using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.EntityFrameworkCore;
-using LimboDancer.MCP.Ontology.Validation;
 using IGraphPreconditionsService = LimboDancer.MCP.McpServer.Graph.IGraphPreconditionsService;
 using ITenantScopeAccessor = LimboDancer.MCP.McpServer.Tenancy.ITenantScopeAccessor;
+using TenancyOptions = LimboDancer.MCP.McpServer.Tenancy.TenancyOptions;
 
 var builder = WebApplication.CreateBuilder(args);
 var services = builder.Services;
@@ -28,7 +31,7 @@ var config = builder.Configuration;
 // Options
 services.Configure<TenancyOptions>(config.GetSection("Tenancy"));
 services.Configure<VectorOptions>(config.GetSection("Vector"));
-services.Configure<GraphOptions>(config.GetSection("Graph"));
+services.Configure<GremlinOptions>(config.GetSection("Graph"));
 
 // Tenancy
 services.AddHttpContextAccessor();
@@ -59,7 +62,7 @@ services.AddScoped<IGraphQueryStore, GraphQueryStore>();
 services.AddSingleton(sp =>
 {
     var opts = sp.GetRequiredService<Microsoft.Extensions.Options.IOptions<VectorOptions>>().Value;
-    return new VectorStore(new Uri(opts.Endpoint), opts.ApiKey, opts.IndexName, opts.VectorDimensions);
+    return new VectorStore(new Uri(opts.Endpoint), new Azure.AzureKeyCredential(opts.ApiKey), opts.IndexName);
 });
 services.AddScoped<VectorSearchService>();
 
@@ -79,8 +82,8 @@ services.AddScoped<MemorySearchTool>();
 services.AddMcpServer();
 
 // Authentication (if needed for HTTP mode)
-services.AddAuthentication("Bearer")
-    .AddJwtBearer("Bearer", options =>
+services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
+    .AddJwtBearer(JwtBearerDefaults.AuthenticationScheme, options =>
     {
         options.Authority = config["Authentication:Authority"];
         options.Audience = config["Authentication:Audience"];

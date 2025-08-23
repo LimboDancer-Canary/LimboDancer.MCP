@@ -40,7 +40,7 @@ internal static class MemSearchCommand
                 TagsAny = tagArr?.Length > 0 ? tagArr : null
             };
 
-            var res = await store.SearchHybridAsync(q, vector: null, k: topK, filters: filters);
+            var res = await store.SearchHybridAsync(q, null, topK, filters);
             foreach (var r in res)
             {
                 Console.WriteLine($"[{r.Score:F3}] {r.Title}  {r.Source}#{r.Chunk}  class={r.OntologyClass}  tags=[{string.Join(",", r.Tags ?? Array.Empty<string>())}]");
@@ -55,10 +55,18 @@ internal static class MemSearchCommand
 
     private static void ApplyTenant(IHost host, string? tenantOpt)
     {
+        var tenantAccessor = host.Services.GetRequiredService<ITenantAccessor>();
+
         if (!string.IsNullOrWhiteSpace(tenantOpt))
         {
-            AmbientTenantAccessor.Set(tenantOpt);
-            return;
+            if (Guid.TryParse(tenantOpt, out var tenantGuid))
+            {
+                if (tenantAccessor is AmbientTenantAccessor)
+                {
+                    AmbientTenantAccessor.Set(tenantGuid);
+                }
+                return;
+            }
         }
 
         var env = host.Services.GetRequiredService<IHostEnvironment>();
@@ -67,11 +75,13 @@ internal static class MemSearchCommand
         if (env.IsDevelopment())
         {
             var cfgTenant = cfg["Tenancy:DefaultTenantId"];
-            if (!string.IsNullOrWhiteSpace(cfgTenant))
+            if (!string.IsNullOrWhiteSpace(cfgTenant) && Guid.TryParse(cfgTenant, out var guid))
             {
-                AmbientTenantAccessor.Set(cfgTenant);
+                if (tenantAccessor is AmbientTenantAccessor)
+                {
+                    AmbientTenantAccessor.Set(guid);
+                }
             }
         }
     }
-
 }

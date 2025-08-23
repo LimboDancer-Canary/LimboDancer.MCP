@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using Gremlin.Net.Driver;
@@ -35,7 +36,7 @@ namespace LimboDancer.MCP.Graph.CosmosGremlin
             _client = client ?? throw new ArgumentNullException(nameof(client));
             _tenantAccessor = tenantAccessor ?? throw new ArgumentNullException(nameof(tenantAccessor));
             _logger = loggerFactory?.CreateLogger<GraphStore>() ?? throw new ArgumentNullException(nameof(loggerFactory));
-            _preconditions = preconditions ?? new Preconditions(client, () => Guid.Parse(_tenantAccessor.TenantId), loggerFactory.CreateLogger<Preconditions>());
+            _preconditions = preconditions ?? new Preconditions(client, () => _tenantAccessor.TenantId, loggerFactory.CreateLogger<Preconditions>());
 
             // Configure retry policy for transient failures
             _retryPolicy = Policy
@@ -49,17 +50,16 @@ namespace LimboDancer.MCP.Graph.CosmosGremlin
                     {
                         _logger.LogWarning(exception,
                             "Retry {RetryCount} after {Delay}ms for operation {Operation}",
-                            retryCount, timeSpan.TotalMilliseconds, context.Values.GetValueOrDefault("operation"));
+                            retryCount, timeSpan.TotalMilliseconds, context.OperationKey);
                     });
         }
 
         private static bool IsTransientException(ResponseException ex)
         {
             // Cosmos DB specific transient error codes
-            if (ex.StatusCode == System.Net.HttpStatusCode.TooManyRequests ||
-                ex.StatusCode == System.Net.HttpStatusCode.ServiceUnavailable ||
-                ex.StatusCode == System.Net.HttpStatusCode.RequestTimeout ||
-                ex.StatusCode == System.Net.HttpStatusCode.GatewayTimeout)
+            if (ex.StatusCode == Gremlin.Net.Driver.Messages.ResponseStatusCode.TooManyRequests ||
+                ex.StatusCode == Gremlin.Net.Driver.Messages.ResponseStatusCode.ServerTimeout ||
+                ex.StatusCode == Gremlin.Net.Driver.Messages.ResponseStatusCode.ServerError)
             {
                 return true;
             }
@@ -78,7 +78,7 @@ namespace LimboDancer.MCP.Graph.CosmosGremlin
         {
             GraphWriteHelpers.ValidateLabel(label);
 
-            var tenantId = Guid.Parse(_tenantAccessor.TenantId);
+            var tenantId = _tenantAccessor.TenantId;
             var vertexId = GraphWriteHelpers.ToVertexId(tenantId, localId);
 
             await _retryPolicy.ExecuteAsync(async (context, cancellationToken) =>
@@ -138,7 +138,7 @@ namespace LimboDancer.MCP.Graph.CosmosGremlin
         {
             GraphWriteHelpers.ValidatePropertyKey(propertyKey);
 
-            var tenantId = tenantIdOverride ?? Guid.Parse(_tenantAccessor.TenantId);
+            var tenantId = tenantIdOverride ?? _tenantAccessor.TenantId;
             var vertexId = GraphWriteHelpers.ToVertexId(tenantId, localId);
 
             await _retryPolicy.ExecuteAsync(async (context, cancellationToken) =>
@@ -171,7 +171,7 @@ namespace LimboDancer.MCP.Graph.CosmosGremlin
         {
             GraphWriteHelpers.ValidatePropertyKey(propertyKey);
 
-            var tenantId = Guid.Parse(_tenantAccessor.TenantId);
+            var tenantId = _tenantAccessor.TenantId;
             var vertexId = GraphWriteHelpers.ToVertexId(tenantId, localId);
 
             return await _retryPolicy.ExecuteAsync(async (context, cancellationToken) =>
@@ -198,7 +198,7 @@ namespace LimboDancer.MCP.Graph.CosmosGremlin
         {
             GraphWriteHelpers.ValidateLabel(label);
 
-            var tenantId = Guid.Parse(_tenantAccessor.TenantId);
+            var tenantId = _tenantAccessor.TenantId;
             var outId = GraphWriteHelpers.ToVertexId(tenantId, outLocalId);
             var inId = GraphWriteHelpers.ToVertexId(tenantId, inLocalId);
 
@@ -275,7 +275,7 @@ namespace LimboDancer.MCP.Graph.CosmosGremlin
         {
             // Set tenant override if provided
             var originalTenantId = _tenantAccessor.TenantId;
-            if (tenantIdOverride.HasValue && tenantIdOverride.Value.ToString() != originalTenantId)
+            if (tenantIdOverride.HasValue && tenantIdOverride.Value != originalTenantId)
             {
                 _logger.LogWarning("UpsertEdge called with tenant override from {Original} to {Override}", originalTenantId, tenantIdOverride.Value);
             }
@@ -285,7 +285,7 @@ namespace LimboDancer.MCP.Graph.CosmosGremlin
 
         public async Task<dynamic?> GetVertexAsync(string localId, CancellationToken ct = default)
         {
-            var tenantId = Guid.Parse(_tenantAccessor.TenantId);
+            var tenantId = _tenantAccessor.TenantId;
             var vid = GraphWriteHelpers.ToVertexId(tenantId, localId);
 
             return await _retryPolicy.ExecuteAsync(async (context, cancellationToken) =>
@@ -307,7 +307,7 @@ namespace LimboDancer.MCP.Graph.CosmosGremlin
         public async Task<IReadOnlyCollection<dynamic>> QueryVerticesByLabelAsync(string label, CancellationToken ct = default)
         {
             GraphWriteHelpers.ValidateLabel(label);
-            var tenantId = Guid.Parse(_tenantAccessor.TenantId);
+            var tenantId = _tenantAccessor.TenantId;
 
             return await _retryPolicy.ExecuteAsync(async (context, cancellationToken) =>
             {
@@ -325,7 +325,7 @@ namespace LimboDancer.MCP.Graph.CosmosGremlin
 
         public async Task DeleteVertexAsync(string localId, CancellationToken ct = default)
         {
-            var tenantId = Guid.Parse(_tenantAccessor.TenantId);
+            var tenantId = _tenantAccessor.TenantId;
             var vid = GraphWriteHelpers.ToVertexId(tenantId, localId);
 
             await _retryPolicy.ExecuteAsync(async (context, cancellationToken) =>
@@ -346,7 +346,7 @@ namespace LimboDancer.MCP.Graph.CosmosGremlin
         {
             GraphWriteHelpers.ValidateLabel(label);
 
-            var tenantId = Guid.Parse(_tenantAccessor.TenantId);
+            var tenantId = _tenantAccessor.TenantId;
             var outId = GraphWriteHelpers.ToVertexId(tenantId, outLocalId);
             var inId = GraphWriteHelpers.ToVertexId(tenantId, inLocalId);
 

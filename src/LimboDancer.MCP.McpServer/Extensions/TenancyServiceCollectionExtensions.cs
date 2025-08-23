@@ -1,12 +1,13 @@
-using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.Configuration;
+﻿using Microsoft.Extensions.Options;
+using LimboDancer.MCP.Core.Tenancy;
 
-namespace LimboDancer.MCP.Core.Tenancy;
+namespace LimboDancer.MCP.McpServer.Extensions;
 
 /// <summary>
 /// Extension methods for registering tenant accessor services.
+/// This belongs in a host project, not in Core.
 /// </summary>
-public static class ServiceCollectionExtensions
+public static class TenancyServiceCollectionExtensions
 {
     /// <summary>
     /// Registers ITenantAccessor as singleton using AmbientTenantAccessor with TenancyOptions.
@@ -14,7 +15,13 @@ public static class ServiceCollectionExtensions
     public static IServiceCollection AddAmbientTenantAccessor(this IServiceCollection services, IConfiguration configuration)
     {
         services.Configure<TenancyOptions>(configuration.GetSection("Tenancy"));
-        services.AddSingleton<ITenantAccessor, AmbientTenantAccessor>();
+
+        services.AddSingleton<ITenantAccessor>(sp =>
+        {
+            var options = sp.GetRequiredService<IOptions<TenancyOptions>>();
+            return TenantAccessorFactory.CreateAmbient(options.Value);
+        });
+
         return services;
     }
 }

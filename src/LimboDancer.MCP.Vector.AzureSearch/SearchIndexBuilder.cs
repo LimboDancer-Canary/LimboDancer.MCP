@@ -1,10 +1,7 @@
 // File: /src/LimboDancer.MCP.Vector.AzureSearch/SearchIndexBuilder.cs
 // Purpose: 
 //   Creates and manages Azure AI Search index schema using MemoryDoc as the unified model.
-//   Removed internal MemoryIndexDocument duplication in favor of direct MemoryDoc usage.
-//
-// (UPDATED) Uses MemoryDoc directly with FieldBuilder for schema generation.
-// (UPDATED) Adds an internal adapter interface so unit tests can verify the built index.
+//   Updated for current Azure.Search.Documents SDK API.
 
 using Azure;
 using Azure.Search.Documents.Indexes;
@@ -20,7 +17,6 @@ namespace LimboDancer.MCP.Vector.AzureSearch
         public const string DefaultSemanticConfig = "ldm-semantic";
         public const int DefaultVectorDimensions = 1536;
 
-        // ---- Public API remains the same ----
         public static Task EnsureIndexAsync(
             SearchIndexClient client,
             string? indexName = null,
@@ -32,7 +28,7 @@ namespace LimboDancer.MCP.Vector.AzureSearch
             return EnsureIndexCoreAsync(adapter, indexName, vectorDimensions, semanticConfigName, ct);
         }
 
-        // ---- Internal for tests ----
+        // Internal for tests
         internal interface IIndexAdminClient
         {
             Task<Response<SearchIndex>> GetIndexAsync(string name, CancellationToken ct);
@@ -44,7 +40,7 @@ namespace LimboDancer.MCP.Vector.AzureSearch
             private readonly SearchIndexClient _client;
             public AdminClientAdapter(SearchIndexClient client) => _client = client;
             public Task<Response<SearchIndex>> GetIndexAsync(string name, CancellationToken ct) => _client.GetIndexAsync(name, ct);
-            public Task<Response<SearchIndex>> CreateOrUpdateIndexAsync(SearchIndex index, CancellationToken ct) => _client.CreateOrUpdateIndexAsync(index, ct: ct);
+            public Task<Response<SearchIndex>> CreateOrUpdateIndexAsync(SearchIndex index, CancellationToken ct) => _client.CreateOrUpdateIndexAsync(index, cancellationToken: ct);
         }
 
         internal static async Task EnsureIndexCoreAsync(
@@ -76,6 +72,7 @@ namespace LimboDancer.MCP.Vector.AzureSearch
         {
             index.Fields = new FieldBuilder().Build(typeof(MemoryDoc));
 
+            // Configure vector search
             var algoName = "hnsw-default";
             index.VectorSearch ??= new VectorSearch();
             index.VectorSearch.Algorithms.Clear();
@@ -83,31 +80,35 @@ namespace LimboDancer.MCP.Vector.AzureSearch
             index.VectorSearch.Algorithms.Add(new HnswAlgorithmConfiguration(algoName));
             index.VectorSearch.Profiles.Add(new VectorSearchProfile(DefaultVectorProfile, algoName));
 
-            var vectorField = index.GetField(nameof(MemoryDoc.ContentVector)) as SearchField;
-            if (vectorField is not null)
+            // Find and configure the vector field
+            var vectorField = index.Fields.FirstOrDefault(f => f.Name == nameof(MemoryDoc.ContentVector)) as SearchField;
+            if (vectorField != null)
             {
-                vectorField.VectorSearchProfileName = DefaultVectorProfile;
+                vectorField.IsSearchable = false; // Vector fields should not be searchable
                 vectorField.VectorSearchDimensions = vectorDimensions;
+                // VectorSearchProfileName is set via the VectorSearchProfile configuration above
             }
 
-            index.SemanticSettings ??= new SemanticSettings();
-            index.SemanticSettings.Configurations.Clear();
-            index.SemanticSettings.Configurations.Add(new SemanticConfiguration(
+            // Configure semantic search
+            index.SemanticSearch ??= new SemanticSearch();
+            index.SemanticSearch.Configurations.Clear();
+
+            var semanticConfig = new SemanticConfiguration(
                 semanticConfigName,
-                new PrioritizedFields
+                new SemanticPrioritizedFields()
                 {
                     TitleField = new SemanticField(nameof(MemoryDoc.Label)),
                     ContentFields =
                     {
-                        new SemanticField(nameof(MemoryDoc.Content)),
-                        new SemanticField(nameof(MemoryDoc.Kind)),
-                        new SemanticField(nameof(MemoryDoc.Status))
+                        new SemanticField(nameof(MemoryDoc.Content))
                     },
                     KeywordsFields =
                     {
                         new SemanticField(nameof(MemoryDoc.Tags))
                     }
-                }));
+                });
+
+            index.SemanticSearch.Configurations.Add(semanticConfig);
         }
     }
 }

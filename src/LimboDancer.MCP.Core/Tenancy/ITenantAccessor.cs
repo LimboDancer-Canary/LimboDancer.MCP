@@ -2,6 +2,6 @@
 
 public interface ITenantAccessor
 {
-    string TenantId { get; }
+    Guid TenantId { get; }
     bool IsDevelopment { get; }
 }

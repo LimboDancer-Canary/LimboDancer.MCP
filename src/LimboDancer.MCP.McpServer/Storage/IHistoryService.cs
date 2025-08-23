@@ -1,5 +1,6 @@
 ﻿using System.Text.Json;
 using LimboDancer.MCP.Core;
+using LimboDancer.MCP.Core.Primitives;
 using LimboDancer.MCP.Storage;
 
 namespace LimboDancer.MCP.McpServer.Storage;

@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using Gremlin.Net.Driver;
@@ -62,7 +63,7 @@ namespace LimboDancer.MCP.Graph.CosmosGremlin
             return count > 0;
         }
 
-        public async Task<bool> HasPropertyAsync(string localId, string key, object? value, CancellationToken ct = default)
+        public async Task<bool> HasPropertyAsync(string localId, string key, object? value = null, CancellationToken ct = default)
         {
             GraphWriteHelpers.ValidatePropertyKey(key);
             var tenantId = _getTenantId();
@@ -77,10 +78,9 @@ namespace LimboDancer.MCP.Graph.CosmosGremlin
                 ["k"] = key
             };
 
-            if (value is null)
+            if (value == null)
             {
-                // Property exists regardless of value
-                query = "g.V(vid).has(tprop, tid).properties(k).limit(1).count()";
+                query = "g.V(vid).has(tprop, tid).has(k).limit(1).count()";
             }
             else
             {
@@ -93,10 +93,9 @@ namespace LimboDancer.MCP.Graph.CosmosGremlin
             return count > 0;
         }
 
-        private static T FirstOrDefault<T>(IReadOnlyCollection<T> results)
+        private static T FirstOrDefault<T>(IReadOnlyCollection<T> collection, T defaultValue = default)
         {
-            foreach (var r in results) return r;
-            return default!;
+            return collection.Count > 0 ? collection.First() : defaultValue;
         }
     }
 }

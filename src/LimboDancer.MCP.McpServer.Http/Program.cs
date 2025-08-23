@@ -1,5 +1,6 @@
 using LimboDancer.MCP.McpServer.Http.Chat;
 using LimboDancer.MCP.McpServer.Http.Infrastructure;
+using LimboDancer.MCP.McpServer.Tenancy;
 using LimboDancer.MCP.Storage;
 using Microsoft.EntityFrameworkCore;
 
@@ -7,8 +8,8 @@ var builder = WebApplication.CreateBuilder(args);
 
 builder.Services.AddHttpContextAccessor();
 
-// Tenancy accessor is already registered in your code as Core.Tenancy.ITenantAccessor
-builder.Services.AddScoped<LimboDancer.MCP.Core.Tenancy.ITenantAccessor, LimboDancer.MCP.McpServer.Http.Tenancy.HttpTenantAccessor>();
+// Tenancy accessor - use the correct one from McpServer.Tenancy namespace
+builder.Services.AddScoped<LimboDancer.MCP.Core.Tenancy.ITenantAccessor, HttpTenantAccessor>();
 
 // Storage
 builder.Services.AddStorage(builder.Configuration);

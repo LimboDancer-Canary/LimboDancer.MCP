@@ -18,6 +18,7 @@
 //   130 canceled (SIGINT)
 
 using System.CommandLine;
+using System.CommandLine.Invocation;
 using System.Net;
 using System.Net.Http;
 using System.Text;
@@ -31,15 +32,24 @@ var root = new RootCommand("LimboDancer MCP CLI");
 // Vector: init
 // -----------------------------
 var vectorInit = new Command("vector", "Vector index commands");
-var vectorInitCmd = new Command("init", "Ensure Azure AI Search index exists (create/update)")
-{
-    new Option<string>("--endpoint", "Azure Search endpoint (https://<service>.search.windows.net)") { IsRequired = true },
-    new Option<string>("--api-key",  "Admin API key") { IsRequired = true },
-    new Option<string>("--index-name", () => LimboDancer.MCP.Vector.AzureSearch.SearchIndexBuilder.DefaultIndexName, "Index name"),
-    new Option<int>("--vector-dimensions", () => 1536, "Embedding dimensions"),
-    new Option<string>("--semantic-config", () => LimboDancer.MCP.Vector.AzureSearch.SearchIndexBuilder.DefaultSemanticConfig, "Semantic config name"),
-    new Option<bool>("--quiet", "Suppress non-error output")
-};
+var vectorInitCmd = new Command("init", "Ensure Azure AI Search index exists (create/update)");
+
+// Define options as variables first
+var viEndpointOpt = new Option<string>("--endpoint", "Azure Search endpoint (https://<service>.search.windows.net)") { IsRequired = true };
+var viApiKeyOpt = new Option<string>("--api-key", "Admin API key") { IsRequired = true };
+var viIndexNameOpt = new Option<string>("--index-name", () => LimboDancer.MCP.Vector.AzureSearch.SearchIndexBuilder.DefaultIndexName, "Index name");
+var viVectorDimsOpt = new Option<int>("--vector-dimensions", () => 1536, "Embedding dimensions");
+var viSemanticOpt = new Option<string>("--semantic-config", () => LimboDancer.MCP.Vector.AzureSearch.SearchIndexBuilder.DefaultSemanticConfig, "Semantic config name");
+var viQuietOpt = new Option<bool>("--quiet", "Suppress non-error output");
+
+// Add options to command
+vectorInitCmd.AddOption(viEndpointOpt);
+vectorInitCmd.AddOption(viApiKeyOpt);
+vectorInitCmd.AddOption(viIndexNameOpt);
+vectorInitCmd.AddOption(viVectorDimsOpt);
+vectorInitCmd.AddOption(viSemanticOpt);
+vectorInitCmd.AddOption(viQuietOpt);
+
 vectorInitCmd.SetHandler(async (string endpoint, string apiKey, string indexName, int dims, string sem, bool quiet) =>
 {
     var opts = new VectorInitCommand.Options
@@ -53,12 +63,13 @@ vectorInitCmd.SetHandler(async (string endpoint, string apiKey, string indexName
     };
     Environment.ExitCode = await VectorInitCommand.RunAsync(opts);
 },
-vectorInitCmd.Options[0] as Option<string>!,
-vectorInitCmd.Options[1] as Option<string>!,
-vectorInitCmd.Options[2] as Option<string>!,
-vectorInitCmd.Options[3] as Option<int>!,
-vectorInitCmd.Options[4] as Option<string>!,
-vectorInitCmd.Options[5] as Option<bool>!);
+viEndpointOpt,
+viApiKeyOpt,
+viIndexNameOpt,
+viVectorDimsOpt,
+viSemanticOpt,
+viQuietOpt);
+
 vectorInit.AddCommand(vectorInitCmd);
 root.AddCommand(vectorInit);
 
@@ -66,227 +77,249 @@ root.AddCommand(vectorInit);
 // Vector: mem add
 // -----------------------------
 var mem = new Command("mem", "Memory/vector document commands");
-var memAdd = new Command("add", "Ingest documents into the vector index")
+var memAdd = new Command("add", "Ingest documents into the vector index");
+
+// Define all options as variables
+var maEndpointOpt = new Option<string>("--endpoint", "Azure Search endpoint (https://<service>.search.windows.net)") { IsRequired = true };
+var maApiKeyOpt = new Option<string>("--api-key", "Admin API key") { IsRequired = true };
+var maIndexNameOpt = new Option<string>("--index-name", () => LimboDancer.MCP.Vector.AzureSearch.SearchIndexBuilder.DefaultIndexName, "Index name");
+var maTenantOpt = new Option<string>("--tenant", "Tenant identifier (required for ingestion)") { IsRequired = true };
+var maFileOpt = new Option<string?>("--file", "JSON file: MemoryDoc or MemoryDoc[]");
+var maContentOpt = new Option<string?>("--content", "Inline content for a single doc");
+var maIdOpt = new Option<string?>("--id", "Optional explicit id (defaults to GUID)");
+var maLabelOpt = new Option<string?>("--label", "Label");
+var maKindOpt = new Option<string?>("--kind", "Kind");
+var maStatusOpt = new Option<string?>("--status", "Status");
+var maTagsOpt = new Option<string?>("--tags", "Tags");
+var maVectorDimsOpt = new Option<int?>("--vector-dimensions", description: "Optional expected embedding dimensions for validation");
+var maQuietOpt = new Option<bool>("--quiet", "Suppress non-error output");
+
+// Add options to command
+memAdd.AddOption(maEndpointOpt);
+memAdd.AddOption(maApiKeyOpt);
+memAdd.AddOption(maIndexNameOpt);
+memAdd.AddOption(maTenantOpt);
+memAdd.AddOption(maFileOpt);
+memAdd.AddOption(maContentOpt);
+memAdd.AddOption(maIdOpt);
+memAdd.AddOption(maLabelOpt);
+memAdd.AddOption(maKindOpt);
+memAdd.AddOption(maStatusOpt);
+memAdd.AddOption(maTagsOpt);
+memAdd.AddOption(maVectorDimsOpt);
+memAdd.AddOption(maQuietOpt);
+
+// Use InvocationContext to avoid SetHandler arity limits
+memAdd.SetHandler(async (InvocationContext ctx) =>
 {
-    new Option<string>("--endpoint", "Azure Search endpoint (https://<service>.search.windows.net)") { IsRequired = true },
-    new Option<string>("--api-key",  "Admin API key") { IsRequired = true },
-    new Option<string>("--index-name", () => LimboDancer.MCP.Vector.AzureSearch.SearchIndexBuilder.DefaultIndexName, "Index name"),
-    new Option<string>("--tenant", "Tenant identifier (required for ingestion)") { IsRequired = true },
-    new Option<string?>("--file", "JSON file: MemoryDoc or MemoryDoc[]"),
-    new Option<string?>("--content", "Inline content for a single doc"),
-    new Option<string?>("--id", "Optional explicit id (defaults to GUID)"),
-    new Option<string?>("--label", "Label"),
-    new Option<string?>("--kind", "Kind"),
-    new Option<string?>("--status", "Status"),
-    new Option<string?>("--tags", "Tags"),
-    new Option<int?>("--vector-dims", "Expected vector dimensions (sanity check)"),
-    new Option<bool>("--quiet", "Suppress non-error output")
-};
-memAdd.SetHandler(async (
-    string endpoint, string apiKey, string indexName, string tenant,
-    string? file, string? content, string? id, string? label, string? kind, string? status, string? tags,
-    int? vectorDims, bool quiet) =>
-{
+    var pr = ctx.ParseResult;
+
     var opts = new MemAddCommand.Options
     {
-        Endpoint = endpoint,
-        ApiKey = apiKey,
-        IndexName = indexName,
-        Tenant = tenant,
-        File = file,
-        Content = content,
-        Id = id,
-        Label = label,
-        Kind = kind,
-        Status = status,
-        Tags = tags,
-        VectorDims = vectorDims,
-        Quiet = quiet
+        Endpoint = pr.GetValueForOption(maEndpointOpt),
+        ApiKey = pr.GetValueForOption(maApiKeyOpt),
+        IndexName = pr.GetValueForOption(maIndexNameOpt) ?? LimboDancer.MCP.Vector.AzureSearch.SearchIndexBuilder.DefaultIndexName,
+        Tenant = pr.GetValueForOption(maTenantOpt),
+        File = pr.GetValueForOption(maFileOpt),
+        Content = pr.GetValueForOption(maContentOpt),
+        Id = pr.GetValueForOption(maIdOpt),
+        Label = pr.GetValueForOption(maLabelOpt),
+        Kind = pr.GetValueForOption(maKindOpt),
+        Status = pr.GetValueForOption(maStatusOpt),
+        Tags = pr.GetValueForOption(maTagsOpt),
+        VectorDims = pr.GetValueForOption(maVectorDimsOpt),
+        Quiet = pr.GetValueForOption(maQuietOpt)
     };
+
     Environment.ExitCode = await MemAddCommand.RunAsync(opts);
-},
-memAdd.Options[0] as Option<string>!,
-memAdd.Options[1] as Option<string>!,
-memAdd.Options[2] as Option<string>!,
-memAdd.Options[3] as Option<string>!,
-memAdd.Options[4] as Option<string?>!,
-memAdd.Options[5] as Option<string?>!,
-memAdd.Options[6] as Option<string?>!,
-memAdd.Options[7] as Option<string?>!,
-memAdd.Options[8] as Option<string?>!,
-memAdd.Options[9] as Option<string?>!,
-memAdd.Options[10] as Option<string?>!,
-memAdd.Options[11] as Option<int?>!,
-memAdd.Options[12] as Option<bool>!);
+});
+
 mem.AddCommand(memAdd);
 root.AddCommand(mem);
 
 // -----------------------------
-// Ontology commands (server-dependent)
+// Ontology: validate
 // -----------------------------
-var ontology = new Command("ontology", "Ontology commands (requires MCP server endpoints)");
+var ontology = new Command("ontology", "Ontology runtime commands");
+var ontologyValidate = new Command("validate", "Validate an ontology JSON file against the McpServer endpoint");
 
-var serverOpt = new Option<string>("--server", "MCP Server base URL (e.g., http://localhost:5179)") { IsRequired = true };
-var timeoutOpt = new Option<int>("--timeout", () => 4000, "Timeout in milliseconds for server checks");
+// Define options as variables
+var ovServerOpt = new Option<string>("--server", "MCP server URL (e.g., http://localhost:5179)") { IsRequired = true };
+var ovFileOpt = new Option<string>("--input", "Local ontology JSON file") { IsRequired = true };
 
-// validate
-var validateCmd = new Command("validate", "Validate ontology via server endpoint (/api/ontology/validate)")
+ontologyValidate.AddOption(ovServerOpt);
+ontologyValidate.AddOption(ovFileOpt);
+
+ontologyValidate.SetHandler(async (string server, string file) =>
 {
-    serverOpt,
-    timeoutOpt,
-    new Option<string>("--input", "Path to ontology JSON to validate") { IsRequired = true }
-};
-validateCmd.SetHandler(async (string server, int timeoutMs, string inputPath) =>
-{
+    if (!File.Exists(file))
+    {
+        Console.Error.WriteLine($"[ontology-validate] File not found: {file}");
+        Environment.ExitCode = 1;
+        return;
+    }
+
+    server = server.TrimEnd('/');
+    var validateUrl = $"{server}/api/ontology/validate";
+
+    using var http = new HttpClient { Timeout = TimeSpan.FromSeconds(30) };
+
+    // Check server availability
+    if (!await CheckServerEndpoint(http, server, "/api/ontology/validate")) return;
+
     try
     {
-        using var http = CreateHttpClient(server, timeoutMs);
-        var ok = await EnsureServerAndEndpointAsync(http, server, "/api/ontology/validate");
-        if (!ok) { Environment.ExitCode = 4; return; }
-
-        var json = await File.ReadAllTextAsync(inputPath, Encoding.UTF8);
+        var json = await File.ReadAllTextAsync(file);
         using var content = new StringContent(json, Encoding.UTF8, "application/json");
+        using var resp = await http.PostAsync(validateUrl, content);
 
-        var resp = await http.PostAsync("/api/ontology/validate", content);
-        if (resp.IsSuccessStatusCode)
+        var respText = await resp.Content.ReadAsStringAsync();
+        if (!resp.IsSuccessStatusCode)
         {
-            var body = await resp.Content.ReadAsStringAsync();
-            Console.WriteLine(body);
-            Environment.ExitCode = 0;
+            Console.Error.WriteLine($"[ontology-validate] {resp.StatusCode}: {respText}");
+            Environment.ExitCode = 1;
             return;
         }
 
-        Console.Error.WriteLine($"[ontology validate] Server returned {(int)resp.StatusCode} {resp.ReasonPhrase}");
-        var err = await resp.Content.ReadAsStringAsync();
-        if (!string.IsNullOrWhiteSpace(err)) Console.Error.WriteLine(err);
-        Environment.ExitCode = resp.StatusCode == HttpStatusCode.NotFound ? 4 : 1;
-    }
-    catch (OperationCanceledException)
-    {
-        Console.Error.WriteLine("[ontology validate] Canceled.");
-        Environment.ExitCode = 130;
+        var result = JsonSerializer.Deserialize<OntologyValidateResult>(respText);
+        if (result?.Errors?.Count > 0)
+        {
+            Console.WriteLine($"[ontology-validate] {result.Errors.Count} validation errors:");
+            foreach (var err in result.Errors)
+                Console.WriteLine($"  - {err}");
+            Environment.ExitCode = 1;
+        }
+        else
+        {
+            Console.WriteLine("[ontology-validate] ✅ Valid ontology.");
+            Environment.ExitCode = 0;
+        }
     }
     catch (HttpRequestException ex)
     {
-        Console.Error.WriteLine($"[ontology validate] Server unavailable: {ex.Message}");
+        Console.Error.WriteLine($"[ontology-validate] Network error: {ex.Message}");
         Environment.ExitCode = 3;
     }
     catch (Exception ex)
     {
-        Console.Error.WriteLine($"[ontology validate] Error: {ex.Message}");
+        Console.Error.WriteLine($"[ontology-validate] Error: {ex.Message}");
         Environment.ExitCode = 1;
     }
 },
-validateCmd.Options[0] as Option<string>!,
-validateCmd.Options[1] as Option<int>!,
-validateCmd.Options[2] as Option<string>!);
+ovServerOpt,
+ovFileOpt);
 
-// export
-var exportCmd = new Command("export", "Export ontology from server (/api/ontology/export)")
+ontology.AddCommand(ontologyValidate);
+
+// -----------------------------
+// Ontology: export
+// -----------------------------
+var ontologyExport = new Command("export", "Export the McpServer's active ontology");
+
+// Define options as variables
+var oeServerOpt = new Option<string>("--server", "MCP server URL (e.g., http://localhost:5179)") { IsRequired = true };
+var oeFormatOpt = new Option<string>("--format", () => "jsonld", "Export format: jsonld | turtle");
+var oeOutputOpt = new Option<string?>("--out", "Output file (default: stdout)");
+
+ontologyExport.AddOption(oeServerOpt);
+ontologyExport.AddOption(oeFormatOpt);
+ontologyExport.AddOption(oeOutputOpt);
+
+ontologyExport.SetHandler(async (string server, string format, string? outFile) =>
 {
-    serverOpt,
-    timeoutOpt,
-    new Option<string>("--out", description: "Output file path") { IsRequired = true }
-};
-exportCmd.SetHandler(async (string server, int timeoutMs, string outPath) =>
-{
+    server = server.TrimEnd('/');
+    var exportUrl = $"{server}/api/ontology/export?format={format}";
+
+    using var http = new HttpClient { Timeout = TimeSpan.FromSeconds(30) };
+
+    // Check server availability
+    if (!await CheckServerEndpoint(http, server, "/api/ontology/export")) return;
+
     try
     {
-        using var http = CreateHttpClient(server, timeoutMs);
-        var ok = await EnsureServerAndEndpointAsync(http, server, "/api/ontology/export");
-        if (!ok) { Environment.ExitCode = 4; return; }
+        using var resp = await http.GetAsync(exportUrl);
+        var respText = await resp.Content.ReadAsStringAsync();
 
-        var resp = await http.GetAsync("/api/ontology/export");
-        if (resp.IsSuccessStatusCode)
+        if (!resp.IsSuccessStatusCode)
         {
-            var body = await resp.Content.ReadAsStringAsync();
-            await File.WriteAllTextAsync(outPath, body, Encoding.UTF8);
-            Console.WriteLine($"[ontology export] ✅ Wrote {outPath}");
-            Environment.ExitCode = 0;
+            Console.Error.WriteLine($"[ontology-export] {resp.StatusCode}: {respText}");
+            Environment.ExitCode = 1;
             return;
         }
 
-        Console.Error.WriteLine($"[ontology export] Server returned {(int)resp.StatusCode} {resp.ReasonPhrase}");
-        var err = await resp.Content.ReadAsStringAsync();
-        if (!string.IsNullOrWhiteSpace(err)) Console.Error.WriteLine(err);
-        Environment.ExitCode = resp.StatusCode == HttpStatusCode.NotFound ? 4 : 1;
-    }
-    catch (OperationCanceledException)
-    {
-        Console.Error.WriteLine("[ontology export] Canceled.");
-        Environment.ExitCode = 130;
+        if (!string.IsNullOrWhiteSpace(outFile))
+        {
+            await File.WriteAllTextAsync(outFile, respText);
+            Console.WriteLine($"[ontology-export] Saved to: {outFile}");
+        }
+        else
+        {
+            Console.WriteLine(respText);
+        }
+        Environment.ExitCode = 0;
     }
     catch (HttpRequestException ex)
     {
-        Console.Error.WriteLine($"[ontology export] Server unavailable: {ex.Message}");
+        Console.Error.WriteLine($"[ontology-export] Network error: {ex.Message}");
         Environment.ExitCode = 3;
     }
     catch (Exception ex)
     {
-        Console.Error.WriteLine($"[ontology export] Error: {ex.Message}");
+        Console.Error.WriteLine($"[ontology-export] Error: {ex.Message}");
         Environment.ExitCode = 1;
     }
 },
-exportCmd.Options[0] as Option<string>!,
-exportCmd.Options[1] as Option<int>!,
-exportCmd.Options[2] as Option<string>!);
+oeServerOpt,
+oeFormatOpt,
+oeOutputOpt);
 
-ontology.AddCommand(validateCmd);
-ontology.AddCommand(exportCmd);
+ontology.AddCommand(ontologyExport);
 root.AddCommand(ontology);
 
 // -----------------------------
-// Run
+// Main entry
 // -----------------------------
-return await root.InvokeAsync(args);
-
-// =============================
-// Helpers
-// =============================
-static HttpClient CreateHttpClient(string serverBase, int timeoutMs)
+var cts = new CancellationTokenSource();
+Console.CancelKeyPress += (_, e) =>
 {
-    var http = new HttpClient
-    {
-        BaseAddress = new Uri(serverBase, UriKind.Absolute),
-        Timeout = TimeSpan.FromMilliseconds(Math.Clamp(timeoutMs, 500, 30000))
-    };
-    return http;
+    e.Cancel = true;
+    cts.Cancel();
+    Environment.ExitCode = 130; // SIGINT
+};
+
+try
+{
+    return await root.InvokeAsync(args);
+}
+catch (OperationCanceledException)
+{
+    return 130;
+}
+catch (Exception ex)
+{
+    Console.Error.WriteLine($"[cli] Unhandled error: {ex.Message}");
+    return 1;
 }
 
-static async Task<bool> EnsureServerAndEndpointAsync(HttpClient http, string serverBase, string endpointPath)
-{
-    // 1) Server up? (HEAD / or GET /health if you add it later)
-    try
-    {
-        using var head = new HttpRequestMessage(HttpMethod.Head, "/");
-        using var resp = await http.SendAsync(head);
-        // Some dev servers don’t implement HEAD; fall back to GET /
-        if (!resp.IsSuccessStatusCode)
-        {
-            using var get = await http.GetAsync("/");
-            if (!get.IsSuccessStatusCode && get.StatusCode != HttpStatusCode.NotFound)
-            {
-                Console.Error.WriteLine($"[server-check] {serverBase} responded {(int)get.StatusCode} {get.ReasonPhrase}");
-            }
-        }
-    }
-    catch (Exception ex)
-    {
-        Console.Error.WriteLine($"[server-check] Cannot reach {serverBase}: {ex.Message}");
-        Environment.ExitCode = 3;
-        return false;
-    }
+// -----------------------------
+// Helpers (must be after all top-level statements)
+// -----------------------------
 
-    // 2) Endpoint available? (OPTIONS or HEAD; fall back to GET with no side effects)
+async Task<bool> CheckServerEndpoint(HttpClient http, string server, string endpointPath)
+{
     try
     {
-        using var req = new HttpRequestMessage(HttpMethod.Options, endpointPath);
-        using var resp = await http.SendAsync(req);
-        if ((int)resp.StatusCode == 404)
+        // First try OPTIONS to test connectivity
+        using var options = new HttpRequestMessage(HttpMethod.Options, server);
+        using var resp = await http.SendAsync(options);
+
+        if (resp.StatusCode == HttpStatusCode.NotFound)
         {
-            Console.Error.WriteLine($"[endpoint-check] {endpointPath} not found on server.");
+            Console.Error.WriteLine($"[endpoint-check] Server not found: {server}");
+            Environment.ExitCode = 3;
             return false;
         }
+
         // If OPTIONS not allowed, try HEAD
         if (resp.StatusCode == HttpStatusCode.MethodNotAllowed)
         {
@@ -295,6 +328,7 @@ static async Task<bool> EnsureServerAndEndpointAsync(HttpClient http, string ser
             if ((int)headResp.StatusCode == 404)
             {
                 Console.Error.WriteLine($"[endpoint-check] {endpointPath} not found on server.");
+                Environment.ExitCode = 4;
                 return false;
             }
         }
@@ -307,3 +341,5 @@ static async Task<bool> EnsureServerAndEndpointAsync(HttpClient http, string ser
     }
     return true;
 }
+
+record OntologyValidateResult(List<string>? Errors);

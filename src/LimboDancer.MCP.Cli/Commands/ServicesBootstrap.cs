@@ -6,10 +6,12 @@ using LimboDancer.MCP.Core;
 using LimboDancer.MCP.Core.Tenancy;
 using LimboDancer.MCP.Graph.CosmosGremlin;
 using LimboDancer.MCP.Storage;
+using LimboDancer.MCP.Storage.Repositories;
 using LimboDancer.MCP.Vector.AzureSearch;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Hosting;
 
 namespace LimboDancer.MCP.Cli.Commands;
 

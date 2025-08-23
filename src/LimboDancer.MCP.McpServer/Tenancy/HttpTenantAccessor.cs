@@ -7,7 +7,7 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 
-namespace LimboDancer.MCP.McpServer.Http.Tenancy
+namespace LimboDancer.MCP.McpServer.Tenancy
 {
     public sealed class HttpTenantAccessor : ITenantAccessor
     {
@@ -34,103 +34,61 @@ namespace LimboDancer.MCP.McpServer.Http.Tenancy
 
         public bool IsDevelopment => _environment.IsDevelopment();
 
-        public string TenantId
+        public Guid TenantId
         {
             get
             {
                 var httpContext = _httpContextAccessor.HttpContext
                     ?? throw new InvalidOperationException("No active HTTP context is available to resolve the tenant.");
 
-                // Check cached value first
                 if (httpContext.Items.TryGetValue(HttpItemsKey, out var cached) &&
                     cached is Guid cachedGuid)
                 {
-                    return cachedGuid.ToString();
+                    return cachedGuid;
                 }
 
-                try
+                var user = httpContext.User;
+                var tenantFromClaim = user?.FindFirstValue(TenantClaimType);
+                if (!string.IsNullOrWhiteSpace(tenantFromClaim) && Guid.TryParse(tenantFromClaim, out var guid))
                 {
-                    // Try to get from claims
-                    var user = httpContext.User;
-                    if (user?.Identity?.IsAuthenticated == true)
-                    {
-                        var tenantFromClaim = user.FindFirstValue(TenantClaimType);
-                        if (TryParseAndCacheTenant(tenantFromClaim, httpContext, "claim", TenantClaimType, out var guid))
-                            return guid.ToString();
+                    httpContext.Items[HttpItemsKey] = guid;
+                    _logger.LogDebug("Resolved tenant from claim '{ClaimType}'.", TenantClaimType);
+                    return guid;
+                }
 
-                        var deprecatedClaim = user.FindFirstValue(DeprecatedTenantClaimType);
-                        if (TryParseAndCacheTenant(deprecatedClaim, httpContext, "deprecated claim", DeprecatedTenantClaimType, out guid))
+                var deprecatedClaim = user?.FindFirstValue(DeprecatedTenantClaimType);
+                if (!string.IsNullOrWhiteSpace(deprecatedClaim) && Guid.TryParse(deprecatedClaim, out var deprecatedGuid))
+                {
+                    httpContext.Items[HttpItemsKey] = deprecatedGuid;
+                    _logger.LogWarning("Resolved tenant from deprecated claim '{ClaimType}'. Preferred: '{Preferred}'.",
+                        DeprecatedTenantClaimType, TenantClaimType);
+                    return deprecatedGuid;
+                }
+
+                if (IsDevelopment)
+                {
+                    if (httpContext.Request.Headers.TryGetValue(TenantHeaders.TenantId, out var headerValues))
+                    {
+                        var tenantFromHeader = headerValues.FirstOrDefault()?.Trim();
+                        if (!string.IsNullOrWhiteSpace(tenantFromHeader) && Guid.TryParse(tenantFromHeader, out var headerGuid))
                         {
-                            _logger.LogWarning("Resolved tenant from deprecated claim '{ClaimType}'. Preferred: '{Preferred}'.",
-                                DeprecatedTenantClaimType, TenantClaimType);
-                            return guid.ToString();
+                            httpContext.Items[HttpItemsKey] = headerGuid;
+                            _logger.LogWarning("Resolved tenant from header '{Header}' in Development.", TenantHeaders.TenantId);
+                            return headerGuid;
                         }
                     }
 
-                    // Development-only fallbacks
-                    if (IsDevelopment)
+                    var tenantFromConfig = _configuration["Tenancy:DefaultTenantId"]?.Trim();
+                    if (!string.IsNullOrWhiteSpace(tenantFromConfig) && Guid.TryParse(tenantFromConfig, out var configGuid))
                     {
-                        // Try header
-                        if (httpContext.Request?.Headers != null &&
-                            httpContext.Request.Headers.TryGetValue(TenantHeaders.TenantId, out var headerValues))
-                        {
-                            var tenantFromHeader = headerValues.FirstOrDefault()?.Trim();
-                            if (TryParseAndCacheTenant(tenantFromHeader, httpContext, "header", TenantHeaders.TenantId, out var guid))
-                            {
-                                _logger.LogWarning("Resolved tenant from header '{Header}' in Development.", TenantHeaders.TenantId);
-                                return guid.ToString();
-                            }
-                        }
-
-                        // Try configuration
-                        var tenantFromConfig = _configuration["Tenancy:DefaultTenantId"]?.Trim();
-                        if (TryParseAndCacheTenant(tenantFromConfig, httpContext, "configuration", "Tenancy:DefaultTenantId", out var guid2))
-                        {
-                            _logger.LogWarning("Resolved tenant from configuration key 'Tenancy:DefaultTenantId' in Development.");
-                            return guid2.ToString();
-                        }
+                        httpContext.Items[HttpItemsKey] = configGuid;
+                        _logger.LogWarning("Resolved tenant from configuration key 'Tenancy:DefaultTenantId' in Development.");
+                        return configGuid;
                     }
-
-                    _logger.LogError("Unable to resolve TenantId from any source. User authenticated: {IsAuthenticated}",
-                        user?.Identity?.IsAuthenticated ?? false);
-                    throw new InvalidOperationException("Unable to resolve TenantId from claims, header, or configuration.");
                 }
-                catch (Exception ex) when (ex is not InvalidOperationException)
-                {
-                    _logger.LogError(ex, "Unexpected error resolving TenantId");
-                    throw new InvalidOperationException("Failed to resolve TenantId due to an unexpected error.", ex);
-                }
+
+                throw new InvalidOperationException("Unable to resolve TenantId from claims, header, or configuration.");
             }
-        }
-
-        private bool TryParseAndCacheTenant(string? value, HttpContext context, string source, string sourceName, out Guid tenantId)
-        {
-            tenantId = Guid.Empty;
-
-            if (string.IsNullOrWhiteSpace(value))
-            {
-                _logger.LogDebug("No tenant value found in {Source} '{SourceName}'", source, sourceName);
-                return false;
-            }
-
-            if (!Guid.TryParse(value, out tenantId))
-            {
-                _logger.LogWarning("Invalid tenant ID format '{Value}' from {Source} '{SourceName}'",
-                    value, source, sourceName);
-                return false;
-            }
-
-            if (tenantId == Guid.Empty)
-            {
-                _logger.LogWarning("Empty GUID tenant ID from {Source} '{SourceName}'", source, sourceName);
-                return false;
-            }
-
-            // Cache the valid tenant ID
-            context.Items[HttpItemsKey] = tenantId;
-            _logger.LogDebug("Resolved tenant {TenantId} from {Source} '{SourceName}'",
-                tenantId, source, sourceName);
-            return true;
         }
     }
 }

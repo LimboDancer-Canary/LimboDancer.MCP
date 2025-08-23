@@ -1,4 +1,5 @@
 using LimboDancer.MCP.Core;
+using LimboDancer.MCP.Storage.Repositories;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -20,6 +21,7 @@ public static class ServiceCollectionExtensions
             options.UseNpgsql(connectionString);
         });
 
+        // Register from the Repositories namespace
         services.AddScoped<IChatHistoryStore, ChatHistoryStore>();
 
         return services;

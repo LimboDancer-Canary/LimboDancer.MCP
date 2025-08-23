@@ -4,6 +4,7 @@ using LimboDancer.MCP.Ontology.Repositories.Cosmos;
 using LimboDancer.MCP.Ontology.Store;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Options;
 
 namespace LimboDancer.MCP.McpServer.DependencyInjection;
 
@@ -16,7 +17,7 @@ internal static class OntologyServiceCollectionExtensions
         // Repository (authoritative store)
         services.AddSingleton<IOntologyRepository>(sp =>
         {
-            var opts = sp.GetRequiredService<Microsoft.Extensions.Options.IOptions<OntologyCosmosOptions>>().Value;
+            var opts = sp.GetRequiredService<IOptions<OntologyCosmosOptions>>().Value;
             return new CosmosOntologyRepository(opts);
         });
 
@@ -33,14 +34,4 @@ internal static class OntologyServiceCollectionExtensions
 
         return services;
     }
-}
-
-// Options for the Cosmos repository
-internal sealed class OntologyCosmosOptions
-{
-    public string AccountEndpoint { get; set; } = string.Empty;
-    public string AccountKey { get; set; } = string.Empty;
-    public string Database { get; set; } = "ontology";
-    public string Container { get; set; } = "catalog";
-    public string LeasesContainer { get; set; } = "leases";
 }

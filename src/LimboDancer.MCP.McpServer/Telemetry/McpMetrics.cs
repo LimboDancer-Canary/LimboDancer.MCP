@@ -16,9 +16,11 @@ public class McpMetrics : IDisposable
     private readonly Histogram<long> _requestSize;
     private readonly Histogram<long> _responseSize;
 
+    public const string MeterName = "LimboDancer.MCP";
+
     public McpMetrics(IMeterFactory meterFactory)
     {
-        _meter = meterFactory.Create("LimboDancer.MCP");
+        _meter = meterFactory.Create(MeterName);
 
         _toolExecutionCount = _meter.CreateCounter<long>(
             "mcp.tool.executions",

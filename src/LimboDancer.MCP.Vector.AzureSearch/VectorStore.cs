@@ -1,16 +1,7 @@
 // File: /src/LimboDancer.MCP.Vector.AzureSearch/VectorStore.cs
 // Purpose:
 //   Unified Azure AI Search client wrapper for memory docs with hybrid (text + vector) search.
-//   Now aligned with MemoryDoc as the single source of truth for field names and schema.
-//
-// Highlights:
-//   - Constructors: (a) SearchClient, (b) endpoint+key+(indexName)
-//   - Hybrid search: lex/semantic + vector query combined in one call
-//   - Tenant scoping: mandatory filter (when provided)
-//   - Field names derived directly from MemoryDoc properties via nameof()
-//   - Removed duplicate MemoryIndexDocument class
-//
-// Dependencies: Azure.Search.Documents (v11+)
+//   Updated for current Azure.Search.Documents SDK API.
 
 using System;
 using System.Collections.Generic;
@@ -67,112 +58,152 @@ namespace LimboDancer.MCP.Vector.AzureSearch
         }
 
         /// <summary>
-        /// Convenience for CLI/server: build from endpoint+apiKey; optional explicit index name.
+        /// Convenience ctor for quick testing/demos.
         /// </summary>
-        public VectorStore(Uri endpoint, string apiKey, string? indexName = null, int vectorDimensions = 1536)
+        public VectorStore(Uri endpoint, AzureKeyCredential key, string? indexName = null)
         {
-            if (endpoint is null) throw new ArgumentNullException(nameof(endpoint));
-            if (string.IsNullOrWhiteSpace(apiKey)) throw new ArgumentNullException(nameof(apiKey));
-
-            IndexName = string.IsNullOrWhiteSpace(indexName) ? DefaultIndexName : indexName!;
-            Client = new SearchClient(endpoint, IndexName, new AzureKeyCredential(apiKey));
+            IndexName = indexName ?? DefaultIndexName;
+            Client = new SearchClient(endpoint, IndexName, key);
         }
 
         // -------------------------
-        // Public API
+        // Upsert/Delete
+        // -------------------------
+
+        public async Task<int> UpsertDocsAsync(IEnumerable<MemoryDoc> docs, CancellationToken ct = default)
+        {
+            if (docs is null) return 0;
+
+            var batch = IndexDocumentsBatch.Create<SearchDocument>();
+            var count = 0;
+
+            foreach (var d in docs)
+            {
+                d.Validate();
+                batch.Actions.Add(DocToIndexAction(d));
+                count++;
+            }
+
+            if (count == 0) return 0;
+
+            var result = await Client.IndexDocumentsAsync(batch, cancellationToken: ct);
+            return result.Value.Results.Count(r => r.Succeeded);
+        }
+
+        public async Task<bool> DeleteDocAsync(string id, CancellationToken ct = default)
+        {
+            if (string.IsNullOrWhiteSpace(id)) return false;
+
+            var batch = IndexDocumentsBatch.Delete(F.Id, new[] { id });
+            var result = await Client.IndexDocumentsAsync(batch, cancellationToken: ct);
+            return result.Value.Results.FirstOrDefault()?.Succeeded ?? false;
+        }
+
+        // -------------------------
+        // Hybrid Search
         // -------------------------
 
         /// <summary>
-        /// Upsert (upload or merge) a batch of documents. All docs should carry TenantId.
-        /// </summary>
-        public async Task UploadAsync(IEnumerable<MemoryDoc> docs, CancellationToken ct = default)
-        {
-            var batch = IndexDocumentsBatch.Upload(docs.Select(ToIndexModel));
-            await Client.IndexDocumentsAsync(batch, ct);
-        }
-
-        /// <summary>
-        /// Delete a batch of documents by Id.
-        /// </summary>
-        public async Task DeleteAsync(IEnumerable<string> ids, CancellationToken ct = default)
-        {
-            var keys = ids.Select(id => new { Id = id }).ToArray();
-            var batch = IndexDocumentsBatch.Delete(keys);
-            await Client.IndexDocumentsAsync(batch, ct);
-        }
-
-        /// <summary>
-        /// Hybrid search: combines textual (semantic) query and vector KNN on Content/ContentVector.
-        /// Pass either/both of (queryText, vector). If both are null/empty, throws.
+        /// Combined text (BM25/semantic) + vector search.
         /// </summary>
         public async Task<IReadOnlyList<SearchHit>> SearchHybridAsync(
             string? queryText,
-            float[]? vector,
-            int k = 50,
-            string? filter = null,
+            float[]? queryVector,
+            int k = 10,
+            string? filterOData = null,
             CancellationToken ct = default)
         {
-            if (string.IsNullOrWhiteSpace(queryText) && (vector is null || vector.Length == 0))
-                throw new ArgumentException("Provide queryText and/or vector.");
+            // For Azure Search, we need at least one of text or vector
+            if (string.IsNullOrWhiteSpace(queryText) && queryVector is null)
+                return Array.Empty<SearchHit>();
 
-            var options = BuildHybridOptions(
-                queryTextProvided: !string.IsNullOrWhiteSpace(queryText),
-                k: k,
-                top: 20,
-                filter: filter,
-                vector: vector
-            );
+            var searchText = string.IsNullOrWhiteSpace(queryText) ? "*" : queryText;
+            var options = BuildHybridOptions(!string.IsNullOrWhiteSpace(queryText), k, k * 2, filterOData, queryVector);
 
-            // Azure AI Search will blend scores when both Search and VectorSearch are provided.
-            // We select a compact projection; adjust if you need more fields.
-            var response = await Client.SearchAsync<SearchDocument>(queryText ?? "*", options, ct);
+            var response = await Client.SearchAsync<SearchDocument>(searchText, options, ct);
+            var hits = new List<SearchHit>();
 
-            var items = new List<SearchHit>();
             await foreach (var result in response.Value.GetResultsAsync())
             {
-                items.Add(ToSearchHit(result));
+                hits.Add(ToSearchHit(result));
             }
-            return items;
+
+            return hits;
         }
 
         /// <summary>
-        /// Hybrid search with structured filters.
+        /// Convenience overload with structured filters.
         /// </summary>
-        public async Task<IReadOnlyList<SearchHit>> SearchHybridAsync(
+        public Task<IReadOnlyList<SearchHit>> SearchHybridAsync(
             string? queryText,
-            float[]? vector,
+            float[]? queryVector,
             int k,
             SearchFilters filters,
             CancellationToken ct = default)
         {
-            var filterClauses = new List<string>();
-
-            if (!string.IsNullOrWhiteSpace(filters.OntologyClass))
-                filterClauses.Add($"{F.Kind} eq '{EscapeODataString(filters.OntologyClass)}'");
-
-            if (!string.IsNullOrWhiteSpace(filters.UriEquals))
-                filterClauses.Add($"{F.SourceId} eq '{EscapeODataString(filters.UriEquals)}'");
-
-            if (filters.TagsAny?.Length > 0)
-            {
-                var tagFilters = filters.TagsAny.Select(t => $"{F.Tags} eq '{EscapeODataString(t)}'");
-                filterClauses.Add($"({string.Join(" or ", tagFilters)})");
-            }
-
-            var filter = filterClauses.Count > 0 ? string.Join(" and ", filterClauses) : null;
-            return await SearchHybridAsync(queryText, vector, k, filter, ct);
+            var filter = BuildFilterString(filters);
+            return SearchHybridAsync(queryText, queryVector, k, filter, ct);
         }
 
         // -------------------------
-        // Internal helpers
+        // Filter builder
         // -------------------------
 
-        private static IndexDocumentsAction<SearchDocument> ToIndexModel(MemoryDoc d)
+        public static string BuildFilterString(SearchFilters filters)
         {
-            // Ensure required fields exist; Azure Search ignores nulls for some attributes but key is mandatory
+            var parts = new List<string>();
+
+            if (!string.IsNullOrWhiteSpace(filters.TenantId))
+                parts.Add($"{F.TenantId} eq '{EscapeODataString(filters.TenantId)}'");
+
+            if (!string.IsNullOrWhiteSpace(filters.OntologyClass))
+                parts.Add($"{F.Kind} eq '{EscapeODataString(filters.OntologyClass)}'");
+
+            if (!string.IsNullOrWhiteSpace(filters.UriEquals))
+                parts.Add($"{F.SourceId} eq '{EscapeODataString(filters.UriEquals)}'");
+
+            if (filters.TagsAny?.Length > 0)
+            {
+                var tagFilters = filters.TagsAny.Select(t => $"search.ismatch('{EscapeODataString(t)}', '{F.Tags}')");
+                parts.Add($"({string.Join(" or ", tagFilters)})");
+            }
+
+            return parts.Count == 0 ? string.Empty : string.Join(" and ", parts);
+        }
+
+        // -------------------------
+        // DTOs
+        // -------------------------
+
+        public sealed record SearchHit(
+            string Id,
+            string? Title,
+            string? Source,
+            int? Chunk,
+            string? OntologyClass,
+            string? Uri,
+            string[]? Tags,
+            string? Content,
+            double Score
+        );
+
+        public sealed class SearchFilters
+        {
+            public string? TenantId { get; init; }
+            public string? OntologyClass { get; init; }
+            public string? UriEquals { get; init; }
+            public string[]? TagsAny { get; init; }
+        }
+
+        // -------------------------
+        // Helpers
+        // -------------------------
+
+        private static IndexDocumentsAction<SearchDocument> DocToIndexAction(MemoryDoc d)
+        {
             var doc = new SearchDocument
             {
-                [F.Id] = d.Id,
+                [F.Id] = d.Id ?? string.Empty,
                 [F.TenantId] = d.TenantId ?? string.Empty,
                 [F.Label] = d.Label ?? string.Empty,
                 [F.Kind] = d.Kind ?? string.Empty,
@@ -221,27 +252,23 @@ namespace LimboDancer.MCP.Vector.AzureSearch
                 options.QueryType = SearchQueryType.Semantic;
                 options.SemanticSearch = new SemanticSearchOptions
                 {
-                    ConfigurationName = DefaultSemanticConfig
+                    SemanticConfigurationName = DefaultSemanticConfig
                 };
             }
 
             // Vector query (hybrid when combined with text)
-            if (vector is not null && vector.Length > 0)
+            if (vector != null && vector.Length > 0)
             {
-                options.VectorSearch = new()
+                options.VectorSearch = new VectorSearchOptions();
+
+                var vectorQuery = new VectorizedQuery(vector)
                 {
-                    Queries =
-                    {
-                        new VectorQuery
-                        {
-                            Vector = vector,
-                            KNearestNeighborsCount = k > 0 ? k : 50,
-                            Fields = F.ContentVector,
-                            // Ensure this matches SearchIndexBuilder profile
-                            Profile = DefaultVectorProfile
-                        }
-                    }
+                    KNearestNeighborsCount = k > 0 ? k : 50,
+                    // Fields must be set in constructor or via separate method
                 };
+                vectorQuery.Fields.Add(F.ContentVector);
+
+                options.VectorSearch.Queries.Add(vectorQuery);
             }
 
             if (!string.IsNullOrWhiteSpace(filter))
@@ -257,59 +284,25 @@ namespace LimboDancer.MCP.Vector.AzureSearch
         {
             var d = r.Document;
 
-            string? GetString(string key) => d.TryGetValue(key, out var val) ? val as string : null;
-            DateTimeOffset? GetDto(string key) => d.TryGetValue(key, out var val) ? val as DateTimeOffset? : null;
+            string? GetString(string key) => d.TryGetValue(key, out var val) ? val?.ToString() : null;
             int? GetInt(string key) => d.TryGetValue(key, out var val) && val is int i ? i : null;
-
-            var sourceId = GetString(F.SourceId);
-            string? source = null;
-            int? chunk = null;
-
-            // Parse source and chunk from sourceId pattern "source#chunk"
-            if (!string.IsNullOrEmpty(sourceId))
+            string[]? GetTags(string key)
             {
-                var parts = sourceId.Split('#');
-                source = parts[0];
-                if (parts.Length > 1 && int.TryParse(parts[1], out var c))
-                    chunk = c;
+                var str = GetString(key);
+                return string.IsNullOrWhiteSpace(str) ? null : str.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
             }
 
-            return new SearchHit
-            {
-                Id = GetString(F.Id)!,
-                Title = GetString(F.Label),
-                Source = source,
-                Chunk = chunk,
-                OntologyClass = GetString(F.Kind),
-                Uri = GetString(F.SourceId),
-                Tags = GetString(F.Tags)?.Split(',', StringSplitOptions.RemoveEmptyEntries),
-                Content = GetString(F.Content),
-                Score = r.Score ?? 0
-            };
-        }
-
-        // -------------------------
-        // Public models
-        // -------------------------
-
-        public sealed class SearchHit
-        {
-            public string Id { get; set; } = default!;
-            public string? Title { get; set; }
-            public string? Source { get; set; }
-            public int? Chunk { get; set; }
-            public string? OntologyClass { get; set; }
-            public string? Uri { get; set; }
-            public string[]? Tags { get; set; }
-            public string? Content { get; set; }
-            public double Score { get; set; }
-        }
-
-        public sealed class SearchFilters
-        {
-            public string? OntologyClass { get; set; }
-            public string? UriEquals { get; set; }
-            public string[]? TagsAny { get; set; }
+            return new SearchHit(
+                Id: GetString(F.Id) ?? "?",
+                Title: GetString(F.Label),
+                Source: GetString(F.SourceId),
+                Chunk: GetInt("chunk"),
+                OntologyClass: GetString(F.Kind),
+                Uri: GetString(F.SourceId),
+                Tags: GetTags(F.Tags),
+                Content: GetString(F.Content),
+                Score: r.Score ?? 0.0
+            );
         }
     }
 }

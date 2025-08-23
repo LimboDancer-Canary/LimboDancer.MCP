@@ -1,4 +1,5 @@
 using System.Text.Json;
+using LimboDancer.MCP.Core.Primitives;
 
 namespace LimboDancer.MCP.Storage;
 
@@ -12,21 +13,17 @@ public sealed class Session
     public ICollection<Message> Messages { get; set; } = new List<Message>();
 }
 
-public enum MessageRole { User, Assistant, Tool }
-
 public sealed class Message
 {
     public Guid Id { get; set; }
     public Guid SessionId { get; set; }
-    public Guid TenantId { get; set; } 
+    public Guid TenantId { get; set; }
     public MessageRole Role { get; set; }
     public string Content { get; set; } = string.Empty;
     public JsonDocument? ToolCallsJson { get; set; }
     public DateTime CreatedAt { get; set; }
     public Session Session { get; set; } = null!;
 }
-
-public enum MemoryKind { Vector, Graph, Reasoning }
 
 public sealed class MemoryItem
 {
@@ -37,7 +34,6 @@ public sealed class MemoryItem
     public JsonDocument? MetaJson { get; set; }
     public DateTime CreatedAt { get; set; }
 }
-
 
 // Tenant-scoped chat entities
 

@@ -1,6 +1,7 @@
 ﻿using System.Diagnostics;
 using System.Text.Json;
 using OpenTelemetry.Trace;
+using Microsoft.Extensions.Logging;
 
 namespace LimboDancer.MCP.McpServer.Telemetry;
 
@@ -22,7 +23,7 @@ public class InstrumentedMcpServer : McpServer
         _logger = logger;
     }
 
-    public override async Task<ToolResult> ExecuteToolAsync(string toolName, JsonElement arguments, CancellationToken ct = default)
+    public override async Task<JsonElement> ExecuteToolAsync(string toolName, JsonElement arguments, CancellationToken ct = default)
     {
         using var activity = McpActivitySource.Instance.StartActivity("mcp.tool.execute", ActivityKind.Server);
         activity?.SetTag("tool.name", toolName);
@@ -34,13 +35,14 @@ public class InstrumentedMcpServer : McpServer
         try
         {
             var result = await base.ExecuteToolAsync(toolName, arguments, ct);
-            success = !result.IsError;
+            success = true;
 
             activity?.SetTag("tool.success", success);
             return result;
         }
         catch (Exception ex)
         {
+            success = false;
             activity?.RecordException(ex);
             activity?.SetStatus(ActivityStatusCode.Error, ex.Message);
             throw;

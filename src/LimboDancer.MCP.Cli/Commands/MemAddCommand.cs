@@ -87,7 +87,7 @@ namespace LimboDancer.MCP.Cli.Commands
                     Console.WriteLine("[MemAdd] Uploading...");
                 }
 
-                await store.UploadAsync(docs, ct);
+                await store.UpsertDocsAsync(docs, ct);
 
                 if (!opts.Quiet)
                 {

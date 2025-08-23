@@ -1,24 +1,31 @@
-﻿using Microsoft.Extensions.Options;
-using OpenTelemetry.Logs;
+﻿using System;
 using OpenTelemetry.Resources;
 
 namespace LimboDancer.MCP.McpServer.Telemetry;
 
 /// <summary>
-/// Custom resource detector for environment information.
+/// Detects environment-specific resources for telemetry.
 /// </summary>
 public class EnvironmentResourceDetector : IResourceDetector
 {
     public Resource Detect()
     {
-        var attributes = new List<KeyValuePair<string, object>>
+        var attributes = new Dictionary<string, object>
         {
-            new("deployment.environment", Environment.GetEnvironmentVariable("ASPNETCORE_ENVIRONMENT") ?? "Unknown"),
-            new("host.name", Environment.MachineName),
-            new("os.description", System.Runtime.InteropServices.RuntimeInformation.OSDescription),
-            new("process.runtime.name", ".NET"),
-            new("process.runtime.version", Environment.Version.ToString())
+            ["service.name"] = "LimboDancer.MCP",
+            ["service.version"] = GetType().Assembly.GetName().Version?.ToString() ?? "unknown",
+            ["deployment.environment"] = Environment.GetEnvironmentVariable("ASPNETCORE_ENVIRONMENT") ?? "production",
+            ["host.name"] = Environment.MachineName
         };
+
+        // Add Azure-specific attributes if running in Azure
+        if (!string.IsNullOrEmpty(Environment.GetEnvironmentVariable("WEBSITE_SITE_NAME")))
+        {
+            attributes["cloud.provider"] = "azure";
+            attributes["cloud.platform"] = "azure_app_service";
+            attributes["cloud.resource_id"] = Environment.GetEnvironmentVariable("WEBSITE_SITE_NAME");
+            attributes["cloud.region"] = Environment.GetEnvironmentVariable("REGION_NAME");
+        }
 
         return new Resource(attributes);
     }

@@ -1,11 +1,6 @@
 ﻿using LimboDancer.MCP.McpServer.Tools;
-using Microsoft.Extensions.AI;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
-using ModelContextProtocol.Core;
-using ModelContextProtocol.Core.Models;
-using ModelContextProtocol.Core.Tools;
-using ModelContextProtocol.Protocol;
 using System.Reflection;
 using System.Text.Json;
 using System.Text.Json.Nodes;
@@ -91,20 +86,12 @@ public class McpServer : IDisposable
     /// <summary>
     /// Execute a tool by name with the given arguments.
     /// </summary>
-    public async Task<ToolResult> ExecuteToolAsync(string toolName, JsonElement arguments, CancellationToken ct = default)
+    public virtual async Task<JsonElement> ExecuteToolAsync(string toolName, JsonElement arguments, CancellationToken ct = default)
     {
         if (!_tools.TryGetValue(toolName, out var registration))
         {
             _logger.LogWarning("Tool {ToolName} not found", toolName);
-            return new ToolResult
-            {
-                ToolUseId = Guid.NewGuid().ToString(),
-                Content = new[]
-                {
-                    new TextContent { Text = $"Tool '{toolName}' not found" }
-                },
-                IsError = true
-            };
+            throw new InvalidOperationException($"Tool '{toolName}' not found");
         }
 
         try
@@ -115,27 +102,12 @@ public class McpServer : IDisposable
             using var scope = _serviceProvider.CreateScope();
             var result = await registration.Executor(scope.ServiceProvider, arguments, ct);
 
-            return new ToolResult
-            {
-                ToolUseId = Guid.NewGuid().ToString(),
-                Content = new[]
-                {
-                    new TextContent { Text = result.GetRawText() }
-                }
-            };
+            return result;
         }
         catch (Exception ex)
         {
             _logger.LogError(ex, "Error executing tool {ToolName}", toolName);
-            return new ToolResult
-            {
-                ToolUseId = Guid.NewGuid().ToString(),
-                Content = new[]
-                {
-                    new TextContent { Text = $"Error executing tool: {ex.Message}" }
-                },
-                IsError = true
-            };
+            throw;
         }
     }
 
@@ -162,4 +134,14 @@ public class McpServer : IDisposable
         public required Type ToolType { get; init; }
         public required Func<IServiceProvider, JsonElement, CancellationToken, Task<JsonElement>> Executor { get; init; }
     }
+}
+
+/// <summary>
+/// Simple tool definition for MCP protocol.
+/// </summary>
+public class Tool
+{
+    public required string Name { get; init; }
+    public string Description { get; init; } = "";
+    public JsonElement InputSchema { get; init; }
 }

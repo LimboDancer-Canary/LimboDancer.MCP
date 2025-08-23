@@ -1,5 +1,4 @@
 ﻿using LimboDancer.MCP.Core.Tenancy;
-using LimboDander.MCP.Core.Tenancy;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Logging;
@@ -90,17 +89,18 @@ public partial class McpController : ControllerBase
         {
             var result = await _mcpServer.ExecuteToolAsync(toolName, arguments, HttpContext.RequestAborted);
 
-            if (result.IsError)
-            {
-                return BadRequest(new
-                {
-                    error = result.Content.FirstOrDefault()?.AsTextContent()?.Text ?? "Unknown error"
-                });
-            }
-
+            // The ExecuteToolAsync method returns a JsonElement directly containing the result
+            // Errors are handled via exceptions, so if we get here, it was successful
             return Ok(new
             {
-                toolResult = result
+                content = new[]
+                {
+                    new
+                    {
+                        type = "text",
+                        text = result.GetRawText()
+                    }
+                }
             });
         }
         catch (Exception ex)
@@ -108,7 +108,12 @@ public partial class McpController : ControllerBase
             _logger.LogError(ex, "Error executing tool {ToolName}", toolName);
             return StatusCode(500, new
             {
-                error = "Internal server error"
+                error = new
+                {
+                    code = -32603,
+                    message = "Internal error",
+                    data = ex.Message
+                }
             });
         }
     }

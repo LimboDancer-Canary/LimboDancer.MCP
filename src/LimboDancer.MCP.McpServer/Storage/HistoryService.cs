@@ -1,5 +1,6 @@
 ﻿using System.Text.Json;
 using LimboDancer.MCP.Core;
+using LimboDancer.MCP.Core.Primitives;
 using LimboDancer.MCP.Core.Tenancy;
 using LimboDancer.MCP.McpServer.Tools;
 using LimboDancer.MCP.Storage;
@@ -29,17 +30,7 @@ public class HistoryService : IHistoryService, IHistoryReader, IHistoryStore
         if (string.IsNullOrWhiteSpace(content))
             throw new ArgumentException("Content cannot be null or empty.", nameof(content));
 
-        Guid tenantId;
-        try
-        {
-            tenantId = Guid.Parse(_tenant.TenantId);
-        }
-        catch (FormatException ex)
-        {
-            _logger.LogError(ex, "Invalid tenant ID format: {TenantId}", _tenant.TenantId);
-            throw new InvalidOperationException($"Invalid tenant ID format: {_tenant.TenantId}", ex);
-        }
-
+        var tenantId = _tenant.TenantId;
         if (tenantId == Guid.Empty)
             throw new InvalidOperationException("TenantId cannot be empty.");
 

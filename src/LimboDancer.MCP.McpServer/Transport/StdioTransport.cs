@@ -1,84 +1,55 @@
-﻿using Microsoft.Extensions.Logging;
-using System.IO.Pipelines;
-using System.Text;
+﻿using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
-using System.Threading.Channels;
+using Microsoft.Extensions.Logging;
 
 namespace LimboDancer.MCP.McpServer.Transport;
 
 /// <summary>
-/// Handles MCP communication over stdio (standard input/output).
+/// MCP standard input/output transport for CLI mode.
 /// </summary>
 public class StdioTransport : IDisposable
 {
     private readonly McpServer _mcpServer;
     private readonly ILogger<StdioTransport> _logger;
-    private readonly JsonRpcProcessor _jsonRpc;
-    private readonly CancellationTokenSource _cancellationTokenSource = new();
-    private readonly Task _readTask;
-    private readonly Task _writeTask;
-    private readonly Channel<string> _outputChannel;
+    private readonly CancellationTokenSource _cancellationTokenSource;
+    private readonly JsonRpc _jsonRpc;
 
     public StdioTransport(McpServer mcpServer, ILogger<StdioTransport> logger)
     {
         _mcpServer = mcpServer ?? throw new ArgumentNullException(nameof(mcpServer));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
-        _jsonRpc = new JsonRpcProcessor();
-        _outputChannel = Channel.CreateUnbounded<string>();
+        _cancellationTokenSource = new CancellationTokenSource();
+        _jsonRpc = new JsonRpc();
 
         RegisterHandlers();
+    }
 
-        // Start read and write loops
-        _readTask = Task.Run(ReadLoopAsync);
-        _writeTask = Task.Run(WriteLoopAsync);
+    public async Task RunAsync()
+    {
+        var readTask = Task.Run(ReadLoopAsync);
+        var writeTask = Task.Run(WriteLoopAsync);
+
+        await Task.WhenAny(readTask, writeTask);
+        _cancellationTokenSource.Cancel();
+
+        await Task.WhenAll(readTask, writeTask);
     }
 
     private void RegisterHandlers()
     {
-        // Handle initialize request
-        _jsonRpc.RegisterMethod("initialize", async (JsonNode? @params) =>
+        // Handle discovery
+        _jsonRpc.RegisterMethod("discover", async (JsonNode? @params) =>
         {
-            _logger.LogInformation("Received initialize request");
-
+            var tools = _mcpServer.GetTools();
             return new JsonObject
             {
-                ["protocolVersion"] = "2024-11-01",
-                ["capabilities"] = new JsonObject
-                {
-                    ["tools"] = new JsonObject { }
-                },
-                ["serverInfo"] = new JsonObject
-                {
-                    ["name"] = "LimboDancer.MCP",
-                    ["version"] = "1.0.0"
-                }
+                ["tools"] = JsonSerializer.SerializeToNode(tools)
             };
         });
 
-        // Handle list tools request
-        _jsonRpc.RegisterMethod("tools/list", async (JsonNode? @params) =>
-        {
-            _logger.LogInformation("Received tools/list request");
-
-            var tools = _mcpServer.GetTools();
-            var toolsArray = new JsonArray();
-
-            foreach (var tool in tools)
-            {
-                toolsArray.Add(new JsonObject
-                {
-                    ["name"] = tool.Name,
-                    ["description"] = tool.Description,
-                    ["inputSchema"] = JsonSerializer.SerializeToNode(tool.InputSchema)
-                });
-            }
-
-            return new JsonObject { ["tools"] = toolsArray };
-        });
-
         // Handle tool execution
-        _jsonRpc.RegisterMethod("tools/call", async (JsonNode? @params) =>
+        _jsonRpc.RegisterMethod("execute", async (JsonNode? @params) =>
         {
             if (@params?["name"]?.GetValue<string>() is not string toolName)
             {
@@ -142,27 +113,14 @@ public class StdioTransport : IDisposable
         catch (Exception ex)
         {
             _logger.LogError(ex, "Error in read loop");
+            _cancellationTokenSource.Cancel();
         }
     }
 
     private async Task WriteLoopAsync()
     {
-        try
-        {
-            using var writer = new StreamWriter(Console.OpenStandardOutput(), Encoding.UTF8)
-            {
-                AutoFlush = true
-            };
-
-            await foreach (var message in _outputChannel.Reader.ReadAllAsync(_cancellationTokenSource.Token))
-            {
-                await writer.WriteLineAsync(message);
-            }
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "Error in write loop");
-        }
+        // For stdio mode, responses are written directly by ProcessRequestAsync
+        await Task.Delay(Timeout.Infinite, _cancellationTokenSource.Token);
     }
 
     private async Task ProcessRequestAsync(JsonNode request)
@@ -172,64 +130,125 @@ public class StdioTransport : IDisposable
             var response = await _jsonRpc.ProcessAsync(request);
             if (response != null)
             {
-                var responseJson = response.ToJsonString(new JsonWriterOptions { Indented = false });
-                await _outputChannel.Writer.WriteAsync(responseJson);
+                var json = response.ToJsonString();
+                Console.WriteLine(json);
             }
         }
         catch (Exception ex)
         {
             _logger.LogError(ex, "Error processing request");
 
-            // Send error response
             var errorResponse = new JsonObject
             {
                 ["jsonrpc"] = "2.0",
-                ["id"] = request["id"]?.GetValue<object>(),
                 ["error"] = new JsonObject
                 {
                     ["code"] = -32603,
-                    ["message"] = "Internal error",
-                    ["data"] = ex.Message
-                }
+                    ["message"] = "Internal error"
+                },
+                ["id"] = request["id"]?.AsValue()
             };
 
-            await _outputChannel.Writer.WriteAsync(
-                errorResponse.ToJsonString(new JsonWriterOptions { Indented = false }));
+            Console.WriteLine(errorResponse.ToJsonString());
         }
-    }
-
-    public async Task RunAsync()
-    {
-        await Task.WhenAny(_readTask, _writeTask);
     }
 
     public void Dispose()
     {
-        _cancellationTokenSource.Cancel();
-        _outputChannel.Writer.TryComplete();
-
-        try
-        {
-            _readTask.Wait(TimeSpan.FromSeconds(5));
-            _writeTask.Wait(TimeSpan.FromSeconds(5));
-        }
-        catch
-        {
-            // Ignore timeout exceptions
-        }
-
-        _cancellationTokenSource.Dispose();
+        _cancellationTokenSource?.Cancel();
+        _cancellationTokenSource?.Dispose();
     }
 }
 
+/// <summary>
+/// Simple JSON-RPC 2.0 handler.
+/// </summary>
+internal class JsonRpc
+{
+    private readonly Dictionary<string, Func<JsonNode?, Task<JsonNode?>>> _methods = new();
+    private readonly Dictionary<string, Func<JsonNode?, Task>> _notifications = new();
+
+    public void RegisterMethod(string name, Func<JsonNode?, Task<JsonNode?>> handler)
+    {
+        _methods[name] = handler;
+    }
+
+    public void RegisterNotification(string name, Func<JsonNode?, Task> handler)
+    {
+        _notifications[name] = handler;
+    }
+
+    public async Task<JsonNode?> ProcessAsync(JsonNode request)
+    {
+        var method = request["method"]?.GetValue<string>();
+        if (string.IsNullOrEmpty(method))
+        {
+            return CreateErrorResponse(request["id"], -32600, "Invalid Request");
+        }
+
+        var @params = request["params"];
+        var id = request["id"];
+
+        // Notification (no id)
+        if (id == null)
+        {
+            if (_notifications.TryGetValue(method, out var notificationHandler))
+            {
+                await notificationHandler(@params);
+            }
+            return null;
+        }
+
+        // Method call
+        if (_methods.TryGetValue(method, out var methodHandler))
+        {
+            try
+            {
+                var result = await methodHandler(@params);
+                return new JsonObject
+                {
+                    ["jsonrpc"] = "2.0",
+                    ["result"] = result,
+                    ["id"] = id
+                };
+            }
+            catch (JsonRpcException ex)
+            {
+                return CreateErrorResponse(id, ex.Code, ex.Message);
+            }
+            catch (Exception ex)
+            {
+                return CreateErrorResponse(id, -32603, $"Internal error: {ex.Message}");
+            }
+        }
+
+        return CreateErrorResponse(id, -32601, "Method not found");
+    }
+
+    private static JsonNode CreateErrorResponse(JsonNode? id, int code, string message)
+    {
+        return new JsonObject
+        {
+            ["jsonrpc"] = "2.0",
+            ["error"] = new JsonObject
+            {
+                ["code"] = code,
+                ["message"] = message
+            },
+            ["id"] = id
+        };
+    }
+}
+
+/// <summary>
+/// JSON-RPC exception.
+/// </summary>
 internal class JsonRpcException : Exception
 {
     public int Code { get; }
-    public object? Data { get; }
 
-    public JsonRpcException(int code, string message, object? data = null) : base(message)
+    public JsonRpcException(int code, string message) : base(message)
     {
         Code = code;
-        Data = data;
     }
 }

@@ -115,7 +115,7 @@ public sealed class MemorySearchTool
 
         return new MemorySearchOutput
         {
-            TenantId = _tenant.TenantId,
+            TenantId = _tenant.TenantId.ToString(),
             Count = results.Count,
             Items = results.Select(r => new MemorySearchItem
             {

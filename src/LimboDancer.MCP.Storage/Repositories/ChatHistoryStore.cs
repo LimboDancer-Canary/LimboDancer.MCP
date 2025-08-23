@@ -1,11 +1,11 @@
 using LimboDancer.MCP.Core;
+using LimboDancer.MCP.Core.Primitives;
 using LimboDancer.MCP.Core.Tenancy;
 using Microsoft.EntityFrameworkCore;
-using Microsoft.EntityFrameworkCore.Storage;
 using Microsoft.Extensions.Logging;
 using System.Text.Json;
 
-namespace LimboDancer.MCP.Storage;
+namespace LimboDancer.MCP.Storage.Repositories;
 
 public sealed class ChatHistoryStore : IChatHistoryStore
 {
@@ -20,22 +20,12 @@ public sealed class ChatHistoryStore : IChatHistoryStore
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
 
-    public async Task<Session> CreateSessionAsync(string userId, JsonDocument? tagsJson = null, CancellationToken ct = default)
+    public async Task<SessionInfo> CreateSessionAsync(string userId, JsonDocument? tagsJson = null, CancellationToken ct = default)
     {
         if (string.IsNullOrWhiteSpace(userId))
             throw new ArgumentException("UserId cannot be null or empty.", nameof(userId));
 
-        Guid tenantId;
-        try
-        {
-            tenantId = Guid.Parse(_tenant.TenantId);
-        }
-        catch (FormatException ex)
-        {
-            _logger.LogError(ex, "Invalid tenant ID format: {TenantId}", _tenant.TenantId);
-            throw new InvalidOperationException($"Invalid tenant ID format: {_tenant.TenantId}", ex);
-        }
-
+        var tenantId = _tenant.TenantId;
         if (tenantId == Guid.Empty)
             throw new InvalidOperationException("TenantId cannot be empty.");
 
@@ -43,7 +33,7 @@ public sealed class ChatHistoryStore : IChatHistoryStore
         using var transaction = await _db.Database.BeginTransactionAsync(ct);
         try
         {
-            var s = new Session
+            var session = new Session
             {
                 Id = Guid.NewGuid(),
                 TenantId = tenantId,
@@ -52,14 +42,19 @@ public sealed class ChatHistoryStore : IChatHistoryStore
                 CreatedAt = DateTime.UtcNow
             };
 
-            _db.Sessions.Add(s);
+            _db.Sessions.Add(session);
             await _db.SaveChangesAsync(ct);
             await transaction.CommitAsync(ct);
 
             _logger.LogInformation("Created session {SessionId} for user {UserId} in tenant {TenantId}",
-                s.Id, userId, tenantId);
+                session.Id, userId, tenantId);
 
-            return s;
+            return new SessionInfo(
+                session.Id,
+                session.TenantId,
+                session.UserId,
+                session.TagsJson,
+                session.CreatedAt);
         }
         catch (Exception ex)
         {
@@ -70,24 +65,14 @@ public sealed class ChatHistoryStore : IChatHistoryStore
         }
     }
 
-    public async Task<Message> AppendMessageAsync(Guid sessionId, MessageRole role, string content, JsonDocument? toolCallsJson = null, CancellationToken ct = default)
+    public async Task<MessageInfo> AppendMessageAsync(Guid sessionId, MessageRole role, string content, JsonDocument? toolCallsJson = null, CancellationToken ct = default)
     {
         if (sessionId == Guid.Empty)
             throw new ArgumentException("SessionId cannot be empty.", nameof(sessionId));
         if (string.IsNullOrWhiteSpace(content))
             throw new ArgumentException("Content cannot be null or empty.", nameof(content));
 
-        Guid tenantId;
-        try
-        {
-            tenantId = Guid.Parse(_tenant.TenantId);
-        }
-        catch (FormatException ex)
-        {
-            _logger.LogError(ex, "Invalid tenant ID format: {TenantId}", _tenant.TenantId);
-            throw new InvalidOperationException($"Invalid tenant ID format: {_tenant.TenantId}", ex);
-        }
-
+        var tenantId = _tenant.TenantId;
         if (tenantId == Guid.Empty)
             throw new InvalidOperationException("TenantId cannot be empty.");
 
@@ -106,7 +91,7 @@ public sealed class ChatHistoryStore : IChatHistoryStore
                 throw new InvalidOperationException($"Session {sessionId} not found for tenant.");
             }
 
-            var m = new Message
+            var message = new Message
             {
                 Id = Guid.NewGuid(),
                 TenantId = tenantId,
@@ -117,13 +102,20 @@ public sealed class ChatHistoryStore : IChatHistoryStore
                 CreatedAt = DateTime.UtcNow
             };
 
-            _db.Messages.Add(m);
+            _db.Messages.Add(message);
             await _db.SaveChangesAsync(ct);
             await transaction.CommitAsync(ct);
 
-            _logger.LogDebug("Appended message {MessageId} to session {SessionId}", m.Id, sessionId);
+            _logger.LogDebug("Appended message {MessageId} to session {SessionId}", message.Id, sessionId);
 
-            return m;
+            return new MessageInfo(
+                message.Id,
+                message.SessionId,
+                message.TenantId,
+                message.Role,
+                message.Content,
+                message.ToolCallsJson,
+                message.CreatedAt);
         }
         catch (Exception ex) when (ex is not InvalidOperationException)
         {
@@ -133,7 +125,7 @@ public sealed class ChatHistoryStore : IChatHistoryStore
         }
     }
 
-    public async Task<IReadOnlyList<Message>> GetMessagesAsync(Guid sessionId, int take = 100, int skip = 0, CancellationToken ct = default)
+    public async Task<IReadOnlyList<MessageInfo>> GetMessagesAsync(Guid sessionId, int take = 100, int skip = 0, CancellationToken ct = default)
     {
         if (sessionId == Guid.Empty)
             throw new ArgumentException("SessionId cannot be empty.", nameof(sessionId));
@@ -143,17 +135,25 @@ public sealed class ChatHistoryStore : IChatHistoryStore
 
         try
         {
-            var items = await _db.Messages
+            var messages = await _db.Messages
                 .AsNoTracking()
                 .Where(x => x.SessionId == sessionId)
                 .OrderBy(x => x.CreatedAt)
                 .Skip(skip)
                 .Take(take)
+                .Select(m => new MessageInfo(
+                    m.Id,
+                    m.SessionId,
+                    m.TenantId,
+                    m.Role,
+                    m.Content,
+                    m.ToolCallsJson,
+                    m.CreatedAt))
                 .ToListAsync(ct);
 
-            _logger.LogDebug("Retrieved {Count} messages for session {SessionId}", items.Count, sessionId);
+            _logger.LogDebug("Retrieved {Count} messages for session {SessionId}", messages.Count, sessionId);
 
-            return items;
+            return messages;
         }
         catch (Exception ex)
         {

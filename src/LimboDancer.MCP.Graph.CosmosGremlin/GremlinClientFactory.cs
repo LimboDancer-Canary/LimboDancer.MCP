@@ -1,3 +1,10 @@
+using System;
+using System.ComponentModel;
+using Gremlin.Net.Driver;
+using Gremlin.Net.Driver.Messages;
+using Gremlin.Net.Structure.IO.GraphSON;
+using Microsoft.Extensions.Options;
+
 #pragma warning disable CS1591 // Missing XML comment for publicly visible type or member
 namespace LimboDancer.MCP.Graph.CosmosGremlin;
 
@@ -33,7 +40,7 @@ public sealed class GremlinClientFactory : IGremlinClientFactory
         // Conditionally set username/password based on IsCosmos
         string? username;
         string? password;
-        
+
         if (_options.IsCosmos)
         {
             username = $"/dbs/{_options.Database}/colls/{_options.Graph}";
@@ -78,7 +85,7 @@ public sealed class GremlinClientFactory : IGremlinClientFactory
     [EditorBrowsable(EditorBrowsableState.Never)]
     public static IGremlinClient Create(GremlinOptions options)
     {
-        var factory = new GremlinClientFactory(Microsoft.Extensions.Options.Options.Create(options));
+        var factory = new GremlinClientFactory(Options.Create(options));
         return factory.Create();
     }
 }

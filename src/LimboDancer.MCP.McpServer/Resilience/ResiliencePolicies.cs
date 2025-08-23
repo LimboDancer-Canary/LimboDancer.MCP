@@ -1,7 +1,9 @@
 ﻿using System.Net;
+using Gremlin.Net.Driver.Messages;
 using LimboDancer.MCP.McpServer.Configuration;
 using Microsoft.Extensions.Options;
 using Polly;
+using Polly.Extensions.Http;
 using Polly.Timeout;
 
 namespace LimboDancer.MCP.McpServer.Resilience;
@@ -99,7 +101,7 @@ public class ResiliencePolicies : IResiliencePolicies
                 },
                 onRetry: (exception, timeSpan, retryCount, context) =>
                 {
-                    var toolName = context.Values.ContainsKey("ToolName") ? context["ToolName"] : "unknown";
+                    var toolName = context.ContainsKey("ToolName") ? context["ToolName"]?.ToString() : "unknown";
                     _logger.LogWarning(exception,
                         "Tool {ToolName} retry {RetryCount} after {Delay}ms",
                         toolName, retryCount, timeSpan.TotalMilliseconds);
@@ -113,14 +115,14 @@ public class ResiliencePolicies : IResiliencePolicies
                 circuitOptions.BreakDuration,
                 onBreak: (exception, duration, context) =>
                 {
-                    var toolName = context.Values.ContainsKey("ToolName") ? context["ToolName"] : "unknown";
+                    var toolName = context.ContainsKey("ToolName") ? context["ToolName"]?.ToString() : "unknown";
                     _logger.LogError(exception,
                         "Circuit breaker opened for tool {ToolName} for {Duration}",
                         toolName, duration);
                 },
                 onReset: context =>
                 {
-                    var toolName = context.Values.ContainsKey("ToolName") ? context["ToolName"] : "unknown";
+                    var toolName = context.ContainsKey("ToolName") ? context["ToolName"]?.ToString() : "unknown";
                     _logger.LogInformation("Circuit breaker reset for tool {ToolName}", toolName);
                 },
                 onHalfOpen: () =>
@@ -134,7 +136,7 @@ public class ResiliencePolicies : IResiliencePolicies
             TimeoutStrategy.Pessimistic,
             onTimeoutAsync: async (context, timespan, task) =>
             {
-                var toolName = context.Values.ContainsKey("ToolName") ? context["ToolName"] : "unknown";
+                var toolName = context.ContainsKey("ToolName") ? context["ToolName"]?.ToString() : "unknown";
                 _logger.LogError("Tool {ToolName} execution timed out after {Timeout}",
                     toolName, timespan);
             });
@@ -152,8 +154,8 @@ public class ResiliencePolicies : IResiliencePolicies
         return Policy
             .Handle<TransientException>()
             .Or<Gremlin.Net.Driver.Exceptions.ResponseException>(ex =>
-                ex.StatusCode == HttpStatusCode.TooManyRequests ||
-                ex.StatusCode == HttpStatusCode.ServiceUnavailable)
+                ex.StatusCode == (ResponseStatusCode)HttpStatusCode.TooManyRequests ||
+                ex.StatusCode == (ResponseStatusCode)HttpStatusCode.ServiceUnavailable)
             .WaitAndRetryAsync(
                 3,
                 retryAttempt => TimeSpan.FromSeconds(Math.Pow(2, retryAttempt)),

@@ -17,7 +17,7 @@ internal static class KgPingCommand
             var g = host.Services.GetRequiredService<IGremlinClient>();
 
             var rs = await g.SubmitAsync<long>("g.V().limit(1).count()");
-            var count = rs.Count > 0 ? rs[0] : 0;
+            var count = rs.FirstOrDefault();
             Console.WriteLine($"Gremlin OK. Sample vertex count: {count}");
         });
 

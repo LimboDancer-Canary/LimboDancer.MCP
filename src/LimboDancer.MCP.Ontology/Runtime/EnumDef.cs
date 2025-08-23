@@ -1,7 +1,4 @@
-﻿using System;
-using System.Collections.Generic;
-
-namespace LimboDancer.MCP.Ontology.Runtime
+﻿namespace LimboDancer.MCP.Ontology.Runtime
 {
     /// <summary>
     /// Enumeration definition to constrain property values to a fixed set of choices.
@@ -30,7 +27,12 @@ namespace LimboDancer.MCP.Ontology.Runtime
         public static EnumDef Create(TenantScope scope, string localName, IEnumerable<string> values, string? label = null, string? description = null)
         {
             if (string.IsNullOrWhiteSpace(localName)) throw new ArgumentException("LocalName is required.", nameof(localName));
-            var list = values is null ? Array.Empty<string>() : new List<string>(values);
+
+            // Fixed: ensure consistent type for Values
+            IReadOnlyList<string> list = values is null
+                ? Array.Empty<string>()
+                : values.ToList();
+
             return new EnumDef
             {
                 Scope = scope,
