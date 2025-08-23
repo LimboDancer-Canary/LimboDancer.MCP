@@ -28,10 +28,11 @@
 		<PackageReference Include="Moq" Version="4.20.70" />
 
 		<!-- ASP.NET Core testing -->
-		<PackageReference Include="Microsoft.AspNetCore.Mvc.Testing" Version="9.0.0" />
+		<PackageReference Include="Microsoft.AspNetCore.Mvc.Testing" Version="9.0.5" />
+		<PackageReference Include="Microsoft.AspNetCore.Authentication" Version="2.2.0" />
 
 		<!-- Logging for tests -->
-		<PackageReference Include="Microsoft.Extensions.Logging.Abstractions" Version="9.0.0" />
+		<PackageReference Include="Microsoft.Extensions.Logging.Abstractions" Version="9.0.5" />
 
 		<!-- Test containers for integration testing (optional) -->
 		<PackageReference Include="Testcontainers" Version="3.7.0" />
@@ -41,6 +42,7 @@
 	<ItemGroup>
 	  <ProjectReference Include="..\..\LimboDancer.MCP.Core\LimboDancer.MCP.Core.csproj" />
 	  <ProjectReference Include="..\..\LimboDancer.MCP.Graph.CosmosGremlin\LimboDancer.MCP.Graph.CosmosGremlin.csproj" />
+	  <ProjectReference Include="..\..\LimboDancer.MCP.McpServer\LimboDancer.MCP.McpServer.csproj" />
 	  <ProjectReference Include="..\..\LimboDancer.MCP.Storage\LimboDancer.MCP.Storage.csproj" />
 	  <ProjectReference Include="..\..\LimboDancer.MCP.Vector.AzureSearch\LimboDancer.MCP.Vector.AzureSearch.csproj" />
 	</ItemGroup>

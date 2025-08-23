@@ -5,6 +5,8 @@ using Microsoft.Extensions.Logging;
 using Moq;
 using System;
 using System.Text.Json;
+using LimboDancer.MCP.McpServer;
+using LimboDancer.MCP.McpServer.Tools;
 using Xunit;
 
 namespace LimboDancer.MCP.Tests.Unit;
@@ -12,7 +14,7 @@ namespace LimboDancer.MCP.Tests.Unit;
 public class McpServerTests
 {
     private readonly ServiceProvider _serviceProvider;
-    private readonly McpServer _mcpServer;
+    private readonly McpServer.McpServer _mcpServer;
 
     public McpServerTests()
     {
@@ -25,7 +27,7 @@ public class McpServerTests
         services.AddLogging(builder => builder.AddConsole());
 
         _serviceProvider = services.BuildServiceProvider();
-        _mcpServer = new McpServer(_serviceProvider, _serviceProvider.GetRequiredService<ILogger<McpServer>>());
+        _mcpServer = new McpServer.McpServer(_serviceProvider, _serviceProvider.GetRequiredService<ILogger<McpServer.McpServer>>());
     }
 
     [Fact]
@@ -43,32 +45,30 @@ public class McpServerTests
     }
 
     [Fact]
-    public async Task ExecuteToolAsync_UnknownTool_ReturnsError()
+    public async Task ExecuteToolAsync_UnknownTool_ThrowsException()
     {
-        // Act
-        var result = await _mcpServer.ExecuteToolAsync("unknown_tool", default(JsonElement));
+        // Act & Assert
+        var exception = await Assert.ThrowsAsync<InvalidOperationException>(
+            () => _mcpServer.ExecuteToolAsync("unknown_tool", default(JsonElement)));
 
-        // Assert
-        result.Should().NotBeNull();
-        result.IsError.Should().BeTrue();
-        result.Content.Should().HaveCount(1);
-        result.Content[0].AsTextContent()?.Text.Should().Contain("not found");
+        exception.Message.Should().Contain("not found");
     }
 
     [Fact]
     public async Task ExecuteToolAsync_ValidTool_ExecutesSuccessfully()
     {
         // Arrange
+        var expectedOutput = new HistoryGetOutput { SessionId = "test", Messages = new() };
         var mockTool = new Mock<HistoryGetTool>(null, null);
         mockTool.Setup(t => t.ExecuteAsync(It.IsAny<JsonElement>(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new HistoryGetOutput { SessionId = "test", Messages = new() });
+            .ReturnsAsync(expectedOutput);
 
         var services = new ServiceCollection();
         services.AddSingleton(mockTool.Object);
         services.AddLogging();
 
         var serviceProvider = services.BuildServiceProvider();
-        var server = new McpServer(serviceProvider, serviceProvider.GetRequiredService<ILogger<McpServer>>());
+        var server = new McpServer.McpServer(serviceProvider, serviceProvider.GetRequiredService<ILogger<McpServer.McpServer>>());
 
         var input = JsonSerializer.SerializeToElement(new { sessionId = "test", limit = 10 });
 
@@ -77,7 +77,39 @@ public class McpServerTests
 
         // Assert
         result.Should().NotBeNull();
-        result.IsError.Should().BeFalse();
+        result.ValueKind.Should().Be(JsonValueKind.Object);
+
+        // Verify the result contains expected properties
+        result.TryGetProperty("sessionId", out var sessionIdProp).Should().BeTrue();
+        sessionIdProp.GetString().Should().Be("test");
+
+        result.TryGetProperty("messages", out var messagesProp).Should().BeTrue();
+        messagesProp.ValueKind.Should().Be(JsonValueKind.Array);
+
         mockTool.Verify(t => t.ExecuteAsync(It.IsAny<JsonElement>(), It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Fact]
+    public async Task ExecuteToolAsync_ToolThrowsException_PropagatesException()
+    {
+        // Arrange
+        var mockTool = new Mock<HistoryGetTool>(null, null);
+        mockTool.Setup(t => t.ExecuteAsync(It.IsAny<JsonElement>(), It.IsAny<CancellationToken>()))
+            .ThrowsAsync(new ArgumentException("Test error"));
+
+        var services = new ServiceCollection();
+        services.AddSingleton(mockTool.Object);
+        services.AddLogging();
+
+        var serviceProvider = services.BuildServiceProvider();
+        var server = new McpServer.McpServer(serviceProvider, serviceProvider.GetRequiredService<ILogger<McpServer.McpServer>>());
+
+        var input = JsonSerializer.SerializeToElement(new { sessionId = "test", limit = 10 });
+
+        // Act & Assert
+        var exception = await Assert.ThrowsAsync<ArgumentException>(
+            () => server.ExecuteToolAsync("history_get", input));
+
+        exception.Message.Should().Be("Test error");
     }
 }

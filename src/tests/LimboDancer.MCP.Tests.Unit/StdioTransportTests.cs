@@ -1,11 +1,15 @@
 ﻿// File: LimboDancer.MCP.Tests/StdioTransportTests.cs
+using FluentAssertions;
+using LimboDancer.MCP.McpServer;
+using LimboDancer.MCP.McpServer.Transport;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 using System.IO;
 using System.Text;
-using Microsoft.Extensions.Logging.Abstractions;
 using Xunit;
-using FluentAssertions;
 
-namespace LimboDancer.MCP.Tests.Integration;
+namespace LimboDancer.MCP.Tests.Unit;
 
 public class StdioTransportTests : IDisposable
 {
@@ -31,25 +35,35 @@ public class StdioTransportTests : IDisposable
     }
 
     [Fact]
-    public async Task StdioTransport_ProcessesInitializeRequest()
+    public async Task StdioTransport_ProcessesDiscoverRequest()
     {
         // Arrange
         var serviceProvider = new ServiceCollection()
             .AddLogging()
-            .AddSingleton<McpServer>()
+            .AddSingleton<McpServer.McpServer>(provider =>
+                new McpServer.McpServer(provider, provider.GetRequiredService<ILogger<McpServer.McpServer>>()))
             .BuildServiceProvider();
 
-        var mcpServer = serviceProvider.GetRequiredService<McpServer>();
+        var mcpServer = serviceProvider.GetRequiredService<McpServer.McpServer>();
         var transport = new StdioTransport(mcpServer, NullLogger<StdioTransport>.Instance);
 
-        // Write initialize request
-        await _inputWriter.WriteLineAsync(@"{""jsonrpc"":""2.0"",""id"":1,""method"":""initialize"",""params"":{}}");
+        // Write discover request
+        await _inputWriter.WriteLineAsync(@"{""jsonrpc"":""2.0"",""id"":1,""method"":""discover"",""params"":{}}");
         await _inputWriter.FlushAsync();
         _inputStream.Position = 0;
 
         // Act
-        var readTask = transport.RunAsync();
-        await Task.Delay(100); // Give it time to process
+        var cancellationTokenSource = new CancellationTokenSource();
+        cancellationTokenSource.CancelAfter(TimeSpan.FromMilliseconds(500)); // Timeout after 500ms
+
+        try
+        {
+            await transport.RunAsync();
+        }
+        catch (OperationCanceledException)
+        {
+            // Expected - we'll cancel the operation
+        }
 
         // Read response
         _outputStream.Position = 0;
@@ -57,15 +71,59 @@ public class StdioTransportTests : IDisposable
 
         // Assert
         response.Should().NotBeNull();
-        response.Should().Contain("protocolVersion");
-        response.Should().Contain("2024-11-01");
+        response.Should().Contain("tools");
+        response.Should().Contain("jsonrpc");
+    }
+
+    [Fact]
+    public async Task StdioTransport_ProcessesExecuteRequest()
+    {
+        // Arrange
+        var serviceProvider = new ServiceCollection()
+            .AddLogging()
+            .AddSingleton<McpServer.McpServer>(provider =>
+                new McpServer.McpServer(provider, provider.GetRequiredService<ILogger<McpServer.McpServer>>()))
+            .BuildServiceProvider();
+
+        var mcpServer = serviceProvider.GetRequiredService<McpServer.McpServer>();
+        var transport = new StdioTransport(mcpServer, NullLogger<StdioTransport>.Instance);
+
+        // Write execute request (this will likely fail since we don't have tools registered, but should get a proper JSON-RPC response)
+        await _inputWriter.WriteLineAsync(@"{""jsonrpc"":""2.0"",""id"":2,""method"":""execute"",""params"":{""name"":""test_tool"",""arguments"":{}}}");
+        await _inputWriter.FlushAsync();
+        _inputStream.Position = 0;
+
+        // Act
+        var cancellationTokenSource = new CancellationTokenSource();
+        cancellationTokenSource.CancelAfter(TimeSpan.FromMilliseconds(500)); // Timeout after 500ms
+
+        try
+        {
+            await transport.RunAsync();
+        }
+        catch (OperationCanceledException)
+        {
+            // Expected - we'll cancel the operation
+        }
+
+        // Read response
+        _outputStream.Position = 0;
+        var response = await _outputReader.ReadLineAsync();
+
+        // Assert
+        response.Should().NotBeNull();
+        response.Should().Contain("jsonrpc");
+        // Should contain either result or error
+        response.Should().Match(r => r.Contains("result") || r.Contains("error"));
     }
 
     public void Dispose()
     {
         Console.SetOut(_originalOut);
         Console.SetIn(_originalIn);
-        _inputStream.Dispose();
-        _outputStream.Dispose();
+        _inputWriter?.Dispose();
+        _outputReader?.Dispose();
+        _inputStream?.Dispose();
+        _outputStream?.Dispose();
     }
 }

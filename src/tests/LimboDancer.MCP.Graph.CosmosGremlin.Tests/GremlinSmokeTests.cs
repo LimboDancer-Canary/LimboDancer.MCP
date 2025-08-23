@@ -1,8 +1,11 @@
 ﻿using FluentAssertions;
+using Gremlin.Net.Driver;
 using Gremlin.Net.Process.Traversal;
 using LimboDancer.MCP.Graph.CosmosGremlin;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Options;
+using Xunit;
 
 public class GremlinSmokeTests
 {
@@ -38,12 +41,14 @@ public class GremlinSmokeTests
 
         var sp = services.BuildServiceProvider();
         var factory = sp.GetRequiredService<IGremlinClientFactory>();
-        await using var client = factory.Create();
+        using var client = factory.Create(); // Changed from 'await using' to 'using'
 
         // g.V().limit(1).count()
         var result = await client.SubmitAsync<long>("g.V().limit(1).count()");
         result.Should().NotBeNull();
         result.Count.Should().Be(1);
-        result[0].Should().BeGreaterThanOrEqualTo(0);
+        result.Should().NotBeNull();
+        result.Count.Should().Be(1);
+        result.First().Should().BeGreaterThanOrEqualTo(0);
     }
 }
