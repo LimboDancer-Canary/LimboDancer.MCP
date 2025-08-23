@@ -158,6 +158,39 @@ The extraction engine identifies patterns in structured documents:
 - Completeness verification
 - Conflict identification between rules
 
+### Graph vs Vector: Complementary Technologies
+
+**LimboDancer.MCP.Graph.CosmosGremlin** stores **structured relationships**:
+- Entities and their connections (e.g., "Elite Unit" IS-A "Infantry Unit")
+- Rule dependencies (e.g., "Rule 7.4.2" HAS-EXCEPTION "Elite Exception")
+- Preconditions and effects (e.g., "Enter Building" REQUIRES "Movement Points > 0")
+- Enables graph traversal queries like "What exceptions apply to this rule?"
+
+**LimboDancer.MCP.Vector.AzureSearch** handles **semantic similarity**:
+- Stores rule text with embeddings for meaning-based search
+- Finds contextually similar rules even with different wording
+- Enables queries like "Find all rules about movement in difficult terrain"
+- Provides hybrid search (keyword + vector) for better recall
+
+**How they work together**:
+
+```mermaid
+flowchart LR
+    Q[Query: "Can tanks<br/>cross rivers?"] --> QE[Query Engine]
+    
+    QE --> VS[Vector Search]
+    QE --> GS[Graph Store]
+    
+    VS --> R1[Find semantically<br/>similar rules about<br/>river crossing]
+    
+    GS --> R2[Traverse: Tank<br/>→ Vehicle Rules<br/>→ Terrain Restrictions]
+    
+    R1 --> A[Combined Answer:<br/>Rules + Exceptions<br/>+ Related Context]
+    R2 --> A
+```
+
+Vector Search finds relevant content by meaning, while Graph Store navigates exact relationships and rule hierarchies. Together they provide both broad discovery and precise traversal - essential for complex rulebooks where a single question might involve multiple interconnected rules.
+
 ---
 
 ## Ontology Design and Implementation
@@ -407,6 +440,8 @@ A PowerShell script (`scripts\bootstrap.ps1`) creates the complete solution stru
 - 🔲 **Milestone 5 – Planner + Precondition/Effect Checks**: Typed ReAct loop, KG validation (NOT STARTED)
 - ✅ **Milestone 6 – Knowledge Graph Integration**: Cosmos DB Gremlin, context expansion
 - ✅ **Milestone 7 – Ingestion Pipeline**: Event-driven document processing
+- **Milestone 7.5 – Document Ingestion Pipeline**: Smart chunking for rule documents, metadata extraction, embedding generation, tenant-scoped indexing
+- **Milestone 7.6 – Hybrid Search Optimization**: Semantic configuration, custom scoring profiles, cross-reference preservation, ontology metadata integration
 - ✅ **Milestone 8 – HTTP Transport**: Streamable HTTP endpoints, Entra ID auth
 - **Milestone 9 – Hardening and Unit Tests**: Testing and debugging
 - **Milestone 9.5 – Ontology Query & Validation**: Contextual queries, consistency checking, exception application
