@@ -18,6 +18,52 @@
 
 LimboDancer.MCP is an **ontology-first** Model Context Protocol (MCP) server built on **.NET 9** and **Azure**. As a full-featured MCP implementation, it provides tools for session management, memory storage, vector search, and knowledge graph operations. What distinguishes LimboDancer is its deep integration with formal ontologies - every tool, memory item, and graph entity is grounded in a typed semantic model. This enables the system to extract structured knowledge from complex documents (for instance rulesets, rulebooks, govt regulations or legal documents), maintain consistency across data stores, and provide contextually-aware responses to any MCP-compatible AI assistant, such as Claude and ChatGPT for instance.
 
+### Example: Processing a Strategy Game Rulebook
+
+When a user submits a board game rulebook (e.g., "Advanced Squad Leader"), LimboDancer:
+
+```mermaid
+flowchart TD
+    A[Rulebook PDF] --> B[Document Ingestion]
+    B --> C{Pattern Recognition}
+    
+    C --> D[Extract Entities]
+    C --> E[Parse Rules]
+    C --> F[Detect Exceptions]
+    C --> G[Find Cross-References]
+    
+    D --> H[Ontology Store]
+    E --> H
+    F --> H
+    G --> H
+    
+    H --> I[Knowledge Graph]
+    H --> J[Vector Index]
+    
+    K[User Query:<br/>'Can elite infantry enter<br/>enemy buildings?'] --> L[Query Engine]
+    
+    L --> I
+    L --> J
+    
+    I --> M[Rule 7.4.2: No entry]
+    I --> N[Exception: Elite units ignore 7.4.2]
+    J --> O[Similar contexts]
+    
+    M --> P[Answer: Yes, elite units<br/>can enter due to exception]
+    N --> P
+    O --> P
+```
+
+1. **Extracts Ontology** - Identifies game entities (units, terrain, weapons), their properties (movement points, firepower), and relationships (line-of-sight rules, stacking limits)
+
+2. **Captures Rule Structure** - Parses numbered rules (e.g., "7.4.2 Infantry may not enter building hexes occupied by enemy units"), creating queryable nodes with cross-references
+
+3. **Handles Exceptions** - Detects special cases ("EXC: Elite units ignore rule 7.4.2") and links them to base rules
+
+4. **Builds Knowledge Graph** - Creates a navigable structure where rules, exceptions, examples, and game states are interconnected
+
+**Benefits**: Instead of searching through a 200-page PDF, users can ask contextual questions like "Can my elite infantry unit enter a building with enemies?" and receive accurate answers that consider all applicable rules, exceptions, and current game state. The system validates rule consistency and flags conflicts during ingestion.
+
 ---
 
 ## Architecture
