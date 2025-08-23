@@ -3,228 +3,130 @@
 ## Table of Contents
 1. [Overview and Purpose](#overview-and-purpose)
 2. [Architecture](#architecture)
-3. [Ontology Design and Implementation](#ontology-design-and-implementation)
-4. [Core Implementation Components](#core-implementation-components)
-5. [Development Setup and Tooling](#development-setup-and-tooling)
-6. [Roadmap and Milestones](#roadmap-and-milestones)
-7. [Source Code Structure](#source-code-structure)
+3. [Core Ontology Components](#core-ontology-components)
+4. [Extraction and Query Capabilities](#extraction-and-query-capabilities)
+5. [Ontology Design and Implementation](#ontology-design-and-implementation)
+6. [Core Implementation Components](#core-implementation-components)
+7. [Development Setup and Tooling](#development-setup-and-tooling)
+8. [Use Cases and Benefits](#use-cases-and-benefits)
+9. [Roadmap and Milestones](#roadmap-and-milestones)
+10. [Source Code Structure](#source-code-structure)
 
 ---
 
 ## Overview and Purpose
 
-LimboDancer.MCP is a **.NET 9** reimplementation of Cipher's memory layer and Model Context Protocol (MCP) server, adapted to **Azure-first architecture** with strong **ontology integration**.
-
-It provides:
-* **MCP runtime**: headless worker/web API exposing tools over stdio and HTTP
-* **Persistence and memory**: relational history, vector store, and knowledge graph
-* **Ontology-driven planning**: typed schemas, preconditions, and effects
-* **Operator UI**: Blazor Server console for inspection and governance
-
-### Platform Targets
-* **Language & Runtime**: .NET 9
-* **Hosting**: Azure Container Apps (MCP runtime + Blazor console as separate containers)
-* **Data Stores**:
-  * PostgreSQL Flexible Server – sessions, history, metadata
-  * Azure AI Search – vector and BM25 hybrid search
-  * Cosmos DB Gremlin API – ontology-backed knowledge graph
-  * Azure Blob Storage – artifacts, summaries, audit bundles
-* **LLMs**: Azure OpenAI (chat and embeddings) via Microsoft.Extensions.AI
-* **Events**: Azure Service Bus for ingestion and workflow signals
-* **Observability**: Application Insights with OpenTelemetry
-
-### High-Level Architecture
-
-```mermaid
-flowchart LR
-  Client[Agent or IDE] --> MCP[LimboDancer MCP Server]
-
-  subgraph Azure Container Apps
-    MCP
-    Console[Blazor Operator Console]
-  end
-
-  MCP --> PG[(PostgreSQL)]
-  MCP --> AIS[(Azure AI Search)]
-  MCP --> KG[(Cosmos DB Gremlin)]
-  MCP --> AOAI[(Azure OpenAI)]
-  MCP --> SB[(Service Bus)]
-  MCP --> BLB[(Blob Storage)]
-  MCP --> APPINS[(App Insights OTEL)]
-  Console --> MCP
-  Console --> APPINS
-```
+LimboDancer.MCP is an **ontology-first** Model Context Protocol (MCP) server built on **.NET 9** and **Azure**. As a full-featured MCP implementation, it provides tools for session management, memory storage, vector search, and knowledge graph operations. What distinguishes LimboDancer is its deep integration with formal ontologies - every tool, memory item, and graph entity is grounded in a typed semantic model. This enables the system to extract structured knowledge from complex documents (for instance rulesets, rulebooks, govt regulations or legal documents), maintain consistency across data stores, and provide contextually-aware responses to any MCP-compatible AI assistant, such as Claude and ChatGPT for instance.
 
 ---
 
 ## Architecture
 
-### Core Projects Structure
-
-```
-/src
-  LimboDancer.MCP.Core          // contracts, DTOs, result types
-  LimboDancer.MCP.Storage       // EF Core models + migrations
-  LimboDancer.MCP.Vector.AzureSearch // Azure AI Search integration
-  LimboDancer.MCP.Graph.CosmosGremlin // Cosmos Gremlin graph integration
-  LimboDancer.MCP.Llm           // Azure OpenAI adapters
-  LimboDancer.MCP.Ontology      // ontology context, schemas, validators
-  LimboDancer.MCP.McpServer     // MCP runtime (stdio + HTTP)
-  LimboDancer.MCP.Cli           // CLI for dev and operators
-  LimboDancer.MCP.BlazorConsole // Operator/admin UI
-```
-
-### Data Model
+### High-Level System Flow
 
 ```mermaid
-erDiagram
-  Session ||--o{ Message : contains
-  Session ||--o{ MemoryItem : references
-  Message ||--o{ ToolCall : includes
-  Message ||--|| Vector : has
-  MemoryItem ||--|| Vector : has
-  MemoryItem ||--o| KGEntity : links_to
-  KGEntity ||--o{ KGRelation : participates_in
-  
-  Session {
-    UUID id PK
-    STRING title
-    DATETIME created_at
-    JSON metadata
-  }
-  
-  Message {
-    BIGINT id PK
-    UUID session_id FK
-    STRING role
-    TEXT content
-    DATETIME timestamp
-    JSON tool_calls
-  }
-  
-  MemoryItem {
-    UUID id PK
-    UUID session_id FK
-    STRING source
-    TEXT content
-    TEXT summary
-    JSON metadata
-    DATETIME created_at
-  }
-  
-  Vector {
-    UUID item_id FK
-    FLOAT[] embedding
-    STRING model
-    INT dimensions
-  }
-```
-
-### Multi-Tenant Architecture
-
-All requests carry an explicit **ontology scope** `{ tenant, package, channel }`. The planner, precondition checks, retrieval, and effect commits must propagate this scope end-to-end:
-
-* **Planner & tools:** every step includes `{tenant,package,channel}` when invoking tools
-* **Retrieval:** AI Search queries filter on `tenant` (and optionally `package`,`channel`)
-* **Knowledge Graph:** all traversals and upserts are scoped to the same tenant (partition or property guard)
-* **History:** session and message reads/writes are scoped by tenant (service-level guard; column optional)
-* **Observability:** logs/traces tag the scope for isolation and triage
-
-### Action Lifecycle
-
-```mermaid
-sequenceDiagram
-  actor Client as Client
-  participant MCP as MCP
-  participant KG as KG
-  participant AIS as AI_Search
-  participant PG as Postgres
-
-  Client->>MCP: Task with ontology types
-  MCP->>KG: Query preconditions
-  KG-->>MCP: Preconditions result
-  alt Preconditions fail
-    MCP-->>Client: Refuse with typed reason
-  else Preconditions ok
-    MCP->>AIS: Hybrid retrieval request
-    MCP->>KG: Neighborhood expansion
-    MCP->>MCP: Rerank and select plan
-    MCP->>MCP: Execute tools
-    MCP->>KG: Commit effects
-    MCP->>PG: Append history
-    MCP-->>Client: Result with references
+graph LR
+  subgraph "Input Sources"
+    RS[Rulesets & Documents]
+    API[OpenAPI Specs]
   end
+  
+  subgraph "LimboDancer Core"
+    EXT[Extraction Engine]
+    ONT[Ontology Store]
+    VAL[Validation Layer]
+    QE[Query Engine]
+  end
+  
+  subgraph "Storage"
+    PG[(PostgreSQL)]
+    CS[(Cosmos DB)]
+    AI[(AI Search)]
+  end
+  
+  RS --> EXT
+  API --> EXT
+  EXT --> ONT
+  ONT --> VAL
+  VAL --> CS
+  ONT --> QE
+  QE --> AI
+  QE --> PG
 ```
+
+### Multi-Tenant Scope
+
+Every operation is scoped by hierarchical partition keys:
+- **Tenant** - Organization boundary
+- **Package** - Module grouping (e.g., "rules", "core")
+- **Channel** - Version stream (e.g., "current", "v1.0.0")
+
+---
+
+## Core Ontology Components
+
+1. **Entities** - Objects within the rules (units, tokens, game pieces, domain concepts)
+2. **Properties** - Attributes and values (stats, costs, capabilities, with owner/range/cardinality)
+3. **Relations** - Typed connections between elements (prerequisites, dependencies, typed edges)
+4. **Enums** - Categorical values (states, types, phases, closed value sets)
+5. **Shapes** - SHACL-like validation templates for data structures
+6. **Exceptions** - Rule modifications and special cases
+7. **Conditions** - Context-dependent rule activation
+8. **References** - Cross-rule linkages and citations
+9. **Examples** - Clarifying instances linked to rules
+10. **Aliases** - Canonical names + synonyms for robust matching
+
+---
+
+## Extraction and Query Capabilities
+
+### Extraction Process
+
+The extraction engine identifies patterns in structured documents:
+- Section headers become entity hierarchies
+- Numbered rules become queryable nodes
+- Cross-references (e.g., "see 10.4") create bidirectional links
+- Exception markers (EXC:, NOTE:) create modifier nodes
+- Temporal sequences establish phase-based containers
+- Conditional phrases generate prerequisite trees
+
+### Query Capabilities
+
+**Structural Queries:**
+- Entity/property lookups
+- Relationship traversal
+- Exception resolution
+- Reference validation
+
+**Contextual Queries:**
+- "What rules apply in situation X?"
+- "What exceptions modify rule Y?"
+- "What's the sequence for action Z?"
+- "What are the prerequisites for W?"
+
+### Validation Layer
+
+- Reference integrity checking
+- Circular dependency detection
+- Terminology consistency
+- Completeness verification
+- Conflict identification between rules
 
 ---
 
 ## Ontology Design and Implementation
 
-LimboDancer.MCP uses ontology as its **semantic backbone**, providing a formal vocabulary that ensures AI agents, tools, and services interpret and reason about information consistently. The ontology layer enables typed planning, reasoning, validation, and governance across the distributed system.
+### MCP Tool Interface
 
-### Core Architecture
+The system provides a set of MCP tools for ontology extraction, query, and validation operations, implemented as .NET classes with JSON schema definitions.
 
-```mermaid
-flowchart TD
-  A[Ontology JSON-LD Context] -->|Defines| B[Classes & Properties]
-  B -->|Shapes| C[Tool Schemas]
-  B -->|Validates| D[Knowledge Graph]
-  C -->|Preconditions| E[Planner]
-  D -->|State| E
-  E -->|Effects| D
-  D -->|Instances| F[Cosmos Gremlin]
-  B -->|Embeddings| G[Azure AI Search]
-  B -->|Metadata| H[PostgreSQL]
-```
+### Key Features
 
-### Key Distinctions
-
-* **Ontology** = Schema and rules (classes, properties, constraints)  
-* **Knowledge Graph** = Data instances (actual entities and relationships)  
-* **Taxonomy** = Lightweight categorical hierarchies for filtering
-
-### Multi-Tenant Architecture
-
-Every ontology artifact is scoped by **hierarchical partition keys**:
-- **Tenant** - Organization boundary
-- **Package** - Module grouping (e.g., "travel", "core")
-- **Channel** - Version stream (e.g., "current", "v1.3.0")
-
-Cross-tenant queries are explicitly forbidden. All operations require full `{tenant, package, channel}` scope.
-
-### Storage Architecture
-
-```mermaid
-flowchart LR
-  subgraph "Authoritative Store"
-    CS[(Cosmos DB<br/>ontology)]
-    CP[(Cosmos DB<br/>proposals)]
-  end
-  
-  subgraph "Runtime Caches"
-    OS[OntologyStore<br/>In-Memory]
-  end
-  
-  subgraph "Downstream Stores"
-    PG[(PostgreSQL<br/>History)]
-    AI[(AI Search<br/>Vectors)]
-    GR[(Gremlin<br/>Graph)]
-  end
-  
-  CS -->|Load| OS
-  OS -->|Sync| PG
-  OS -->|Sync| AI
-  OS -->|Sync| GR
-```
-
-### Ontology Artifacts
-
-- **Classes (EntityDef)**: Domain concepts like `Person`, `Trip`, `Reservation`, `Tool`
-- **Properties (PropertyDef)**: Attributes with owner, range, cardinality (e.g., `Reservation.status`)
-- **Relations (RelationDef)**: Typed edges between classes (e.g., `Reservation --forTrip--> Trip`)
-- **Enums (EnumDef)**: Closed value sets (e.g., status ∈ {Active, Canceled})
-- **Aliases (AliasDef)**: Canonical names + synonyms for robust matching
-- **Shapes (ShapeDef)**: SHACL-like validation constraints per class
+1. **Dynamic Node Creation** - Discovers node types from document patterns
+2. **Relationship Mining** - Extracts connections from natural language
+3. **State Management** - Tracks conditional rule activation
+4. **Example Integration** - Links examples to their parent rules
+5. **Multi-format Support** - Handles various rulebook structures
 
 ### Generation Pipeline
 
@@ -241,6 +143,19 @@ flowchart TD
   REV --> PUB
   PUB --> SYNC[Sync Downstream]
 ```
+
+### Governance
+
+- **Approval Gates**: New classes require human review
+- **Constraints**: SHACL-style validators enforce rules
+- **Provenance**: Every artifact tracks source documents
+- **Versioning**: Channels enable controlled evolution
+
+### Export Formats
+
+- **JSON-LD**: Native format with @context
+- **Turtle/RDF**: For external reasoning systems
+- **Graph Schema**: Vertex/edge manifest for Gremlin
 
 ---
 
@@ -299,29 +214,27 @@ public class Message
 
 Each tool's `input_schema` embeds JSON-LD `@context` for ontology-bound fields.
 
-### 5. Planner with Precondition Gate
+### 5. Planner with Precondition Gate (Not Yet Implemented)
 
-**Files**: `src/LimboDancer.MCP.Core/Planning/{PlanStep.cs, Planner.cs}`
+**Planned Files**: `src/LimboDancer.MCP.Core/Planning/{PlanStep.cs, Planner.cs}`
 
-**Typed ReAct Implementation**:
-```csharp
-public sealed class PlanStep
-{
-    public string Thought { get; init; } = "";
-    public string ToolName { get; init; } = "";
-    public IReadOnlyDictionary<string, object?> Arguments { get; init; }
-    public PlanDecision Decision { get; init; } = PlanDecision.Proceed;
-    public string? RefusalReason { get; init; }
-}
-```
+**Planned Design**:
+- Multi-step tool orchestration
+- Precondition validation against graph state
+- Effect management after tool execution
+- Typed ReAct implementation for reasoning
+- Failure handling and retry strategies
+
+**Note**: This component is needed for intelligent multi-tool scenarios but is not yet implemented.
 
 ### 6. HTTP Transport with SSE Events
 
-**Files**: `src/LimboDancer.MCP.McpServer.Http/{Auth.cs, SseEndpoints.cs}`
+**Files**: `src/LimboDancer.MCP.McpServer.Http/{AuthExtensions.cs, HttpTransport.cs, ChatStreamEndpoint.cs}`
 
 **Features**:
 - Entra ID (Azure AD) JWT authentication
 - Server-Sent Events at `/mcp/events`
+- Chat streaming endpoints
 - Role-based policies (Reader/Operator)
 
 ### 7. Operator Console (Blazor Server)
@@ -400,6 +313,30 @@ A PowerShell script (`scripts\bootstrap.ps1`) creates the complete solution stru
 
 ---
 
+## Use Cases and Benefits
+
+### Use Cases
+
+- **Complex wargame rules** (ASL, GMT games)
+- **RPG systems** (D&D, Pathfinder)
+- **Board game manuals**
+- **Legal/regulatory documents**
+- **Technical specifications**
+- **API documentation**
+- **Business process definitions**
+
+### Benefits
+
+- **Dynamic Knowledge** - Transforms static rules into queryable, dynamic knowledge graphs
+- **Intelligent Assistance** - Enables context-aware rule application and assistance
+- **Consistency Validation** - Ensures rule consistency across complex systems
+- **Conditional Logic Support** - Handles complex conditional and exception-based logic
+- **Contextual Application** - Provides rule guidance based on current game/system state
+- **Cross-Reference Resolution** - Automatically resolves and validates rule references
+- **Version Control** - Manages rule evolution through channel-based versioning
+
+---
+
 ## Roadmap and Milestones
 
 ### Guiding Principles
@@ -419,17 +356,52 @@ A PowerShell script (`scripts\bootstrap.ps1`) creates the complete solution stru
 
 #### Beta Phase (Milestones 4-9)
 - ✅ **Milestone 4 – Ontology v1**: JSON-LD context, base classes, tool schema mapping
-- ✅ **Milestone 5 – Planner + Precondition/Effect Checks**: Typed ReAct loop, KG validation
+- **Milestone 4.5 – Rule Extraction Engine**: Pattern recognition, exception detection, cross-reference resolution
+- **Milestone 4.6 – Advanced Ontology Features**: Conditional activation, example integration, validation framework
+- 🔲 **Milestone 5 – Planner + Precondition/Effect Checks**: Typed ReAct loop, KG validation (NOT STARTED)
 - ✅ **Milestone 6 – Knowledge Graph Integration**: Cosmos DB Gremlin, context expansion
 - ✅ **Milestone 7 – Ingestion Pipeline**: Event-driven document processing
 - ✅ **Milestone 8 – HTTP Transport**: Streamable HTTP endpoints, Entra ID auth
 - **Milestone 9 – Hardening and Unit Tests**: Testing and debugging
+- **Milestone 9.5 – Ontology Query & Validation**: Contextual queries, consistency checking, exception application
 
 #### 1.0 Release (Milestones 10-13)
 - **Milestone 10 – Blazor Server Operator Console**: Admin dashboards
 - **Milestone 11 – Multi-tenant hardening**: Proven isolation across all components
 - **Milestone 12 – Observability & Governance**: OTEL traces, SHACL validators
 - **Milestone 13 – Packaging & 1.0 Release**: Containers, CI/CD, documentation
+
+### Implementation Status
+
+#### Complete
+- Multi-tenant Cosmos storage with HPK
+- In-memory OntologyStore with indexes
+- JSON-LD/RDF export services
+- Tool schema binding framework
+- Basic validators and governance
+- Core MCP server implementation
+- PostgreSQL persistence layer
+- Azure AI Search integration
+- HTTP Transport with SSE
+- Authentication via Entra ID
+
+#### In Progress
+- Ontology Generator for automated extraction
+- Change Feed synchronization
+- Operator Console review UI
+- Gremlin graph implementation
+
+#### Not Started
+- Planner with precondition/effect checks
+- Rule extraction engine
+- Advanced ontology query features
+
+#### Future
+- OWL reasoning integration
+- Cross-ontology mapping
+- Advanced governance rules
+- Production hardening
+- Comprehensive test coverage
 
 ---
 
@@ -486,8 +458,8 @@ A PowerShell script (`scripts\bootstrap.ps1`) creates the complete solution stru
 **Infrastructure**:
 - `SearchIndexBuilder.cs` - Azure AI Search index management
 - `GremlinClientFactory.cs` - Cosmos Gremlin connection pooling
-- `Auth.cs` - Entra ID authentication setup
-- `SseEndpoints.cs` - Server-Sent Events implementation
+- `AuthExtensions.cs` - Entra ID authentication setup
+- `HttpTransport.cs` - Server-Sent Events implementation
 
 ---
 
