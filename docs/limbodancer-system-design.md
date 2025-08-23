@@ -176,7 +176,7 @@ The extraction engine identifies patterns in structured documents:
 
 ```mermaid
 flowchart LR
-    Q[Query: "Can tanks<br/>cross rivers?"] --> QE[Query Engine]
+    Q[Query: Can tanks<br/>cross rivers?] --> QE[Query Engine]
     
     QE --> VS[Vector Search]
     QE --> GS[Graph Store]
