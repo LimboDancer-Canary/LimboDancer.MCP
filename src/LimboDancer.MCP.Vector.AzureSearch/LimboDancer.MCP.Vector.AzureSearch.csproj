@@ -6,9 +6,9 @@
 	</PropertyGroup>
 
 	<ItemGroup>
-		<PackageReference Include="Azure.Search.Documents" Version="11.6.1" />
+		<PackageReference Include="Azure.Search.Documents" />
 		<!-- Add System.ComponentModel.Annotations for [Required] attribute -->
-		<PackageReference Include="System.ComponentModel.Annotations" Version="5.0.0" />
+		<PackageReference Include="System.ComponentModel.Annotations" />
 	</ItemGroup>
 
 	<ItemGroup>
