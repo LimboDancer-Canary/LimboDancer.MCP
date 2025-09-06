@@ -1,5 +1,8 @@
 # **LimboDancer.MCP System Design**
 
+## Executive Summary
+LimboDancer.MCP is an ontology-first Model Context Protocol server that transforms complex documents—rulebooks, regulations, technical specifications—into queryable knowledge graphs, using Vector and Graph databases, enabling AI assistants like Claude and ChatGPT to provide contextually-accurate answers about intricate rule systems. Built on .NET 9 and Azure, it extracts structured knowledge while preserving exact rule references (critical for domains like wargaming where "Rule A6.41" must remain unchanged), handles nested exceptions and cross-references, integrates spatial data through a plugin architecture (supporting hex-based wargames, grid-based RPGs, or custom coordinate systems), and maintains dynamic state tracking for scenarios where terrain changes or units move. The system combines graph traversal for precise rule relationships with vector search for semantic discovery, validates consistency across thousands of interconnected rules, and scales through multi-tenant isolation—turning 200-page PDFs that require expert interpretation into intelligent systems that can answer questions like "Can my elite infantry unit enter an enemy-occupied building?" by considering base rules, applicable exceptions, current game state, and spatial constraints. This system addresses the AI needs of vertical markets such as gaming (tabletop market $15B+), regulatory compliance, technical documentation, the legal profession, and any domain where complex conditional logic must be consistently applied, offering organizations the ability to democratize expert knowledge while ensuring accuracy and reducing costly rule interpretation errors.
+
 ## Table of Contents
 1. [Overview and Purpose](#overview-and-purpose)
 2. [Architecture](#architecture)
@@ -58,7 +61,7 @@ flowchart TD
 
 2. **Captures Rule Structure** - Parses numbered rules (e.g., "7.4.2 Infantry may not enter building hexes occupied by enemy units"), creating queryable nodes with cross-references
 
-3. **Handles Exceptions** - Detects special cases ("EXC: Elite units ignore rule 7.4.2") and links them to base rules
+3. **Handles Exceptions** - Detects special cases ("EXC: Elite units ignore rule 7.4.2") and links them to base rules with proper precedence
 
 4. **Builds Knowledge Graph** - Creates a navigable structure where rules, exceptions, examples, and game states are interconnected
 
@@ -75,6 +78,7 @@ graph LR
   subgraph "Input Sources"
     RS[Rulesets & Documents]
     API[OpenAPI Specs]
+    MD[Map/Board Data]
   end
   
   subgraph "LimboDancer Core"
@@ -82,22 +86,27 @@ graph LR
     ONT[Ontology Store]
     VAL[Validation Layer]
     QE[Query Engine]
+    PS[Plugin System]
   end
   
   subgraph "Storage"
     PG[(PostgreSQL)]
     CS[(Cosmos DB)]
     AI[(AI Search)]
+    RD[(Reference Data)]
   end
   
   RS --> EXT
   API --> EXT
+  MD --> RD
   EXT --> ONT
   ONT --> VAL
   VAL --> CS
   ONT --> QE
   QE --> AI
   QE --> PG
+  QE --> PS
+  PS --> RD
 ```
 
 ### Multi-Tenant Scope
@@ -107,89 +116,125 @@ Every operation is scoped by hierarchical partition keys:
 - **Package** - Module grouping (e.g., "rules", "core")
 - **Channel** - Version stream (e.g., "current", "v1.0.0")
 
+### Plugin Architecture
+
+Domain-specific logic is isolated in plugins:
+- **ASL Plugin** - Hex-based wargame spatial logic
+- **D&D Plugin** - Grid-based RPG mechanics
+- **Chess Plugin** - Algebraic notation and board logic
+- **Generic Plugin** - Fallback for unstructured documents
+
 ---
 
 ## Core Ontology Components
+
+### Enhanced Node Types (Phase 3)
 
 1. **Entities** - Objects within the rules (units, tokens, game pieces, domain concepts)
 2. **Properties** - Attributes and values (stats, costs, capabilities, with owner/range/cardinality)
 3. **Relations** - Typed connections between elements (prerequisites, dependencies, typed edges)
 4. **Enums** - Categorical values (states, types, phases, closed value sets)
 5. **Shapes** - SHACL-like validation templates for data structures
-6. **Exceptions** - Rule modifications and special cases
-7. **Conditions** - Context-dependent rule activation
-8. **References** - Cross-rule linkages and citations
-9. **Examples** - Clarifying instances linked to rules
-10. **Aliases** - Canonical names + synonyms for robust matching
+6. **RuleNodes** - Primary rule statements with preserved canonical IDs (A.1, B.23.71)
+7. **ExceptionNodes** - Rule modifications with precedence weights and nested support
+8. **ConditionNodes** - Context-dependent rule activation and prerequisites
+9. **ReferenceNodes** - Cross-rule linkages preserving exact rule IDs
+10. **ExampleNodes** - Clarifying instances with location references validation
+11. **DefinitionNodes** - CAPS terms with special meanings
+12. **PhaseNodes** - Temporal containers for phase-specific rules
+13. **MatrixRuleNodes** - Multi-dimensional rule tables (terrain charts)
+14. **Aliases** - Canonical names + synonyms for robust matching
+
+### Dynamic State Components
+
+1. **HexState** - Tracks base and current terrain plus unit occupants
+2. **Unit** - Dynamic game pieces with movement and LOS properties
+3. **Counter** - Terrain modifiers (smoke, rubble, blazes)
+4. **GameBoard** - Manages dynamic state overlay on pre-computed base data
 
 ---
 
 ## Extraction and Query Capabilities
 
-### Extraction Process
+### Enhanced Extraction Process (Phase 3)
 
-The extraction engine identifies patterns in structured documents:
-- Section headers become entity hierarchies
-- Numbered rules become queryable nodes
-- Cross-references (e.g., "see 10.4") create bidirectional links
-- Exception markers (EXC:, NOTE:) create modifier nodes
-- Temporal sequences establish phase-based containers
-- Conditional phrases generate prerequisite trees
+The extraction engine identifies complex patterns:
+- **Canonical Rule IDs** preserved exactly (A.1, B.23.71, 10.211)
+- **Nested exceptions** with precedence chains (EXC within EXC)
+- **Matrix rules** for terrain charts and combat tables
+- **Location references** extracted from examples (3K3, P5)
+- **Hierarchical rule structure** (10.211 → 10.21 → 10.2 → 10)
+- **Module namespacing** (Part A, Part B, module-specific)
 
-### Query Capabilities
+### Advanced Query Capabilities
 
 **Structural Queries:**
-- Entity/property lookups
-- Relationship traversal
-- Exception resolution
-- Reference validation
+- Rule hierarchy traversal using canonical IDs
+- Exception precedence resolution
+- Cross-module reference validation
+- Matrix rule lookups
+
+**Spatial Queries (via plugins):**
+- Line of sight calculations
+- Distance and adjacency checks
+- Terrain modification effects
+- Dynamic state queries
 
 **Contextual Queries:**
-- "What rules apply in situation X?"
-- "What exceptions modify rule Y?"
-- "What's the sequence for action Z?"
-- "What are the prerequisites for W?"
+- "Can infantry in woods at K3 see building at P5?"
+- "What exceptions apply when elite units enter buildings?"
+- "What are my options during Prep Fire Phase?"
+
+### Reference Data Integration
+
+- **Pre-computed LOS data** for performance
+- **JSON document store** for map/hex data
+- **Dynamic terrain modifications** (buildings→rubble, woods→blazes)
+- **Unit movement tracking** with state enrichment
 
 ### Validation Layer
 
-- Reference integrity checking
-- Circular dependency detection
-- Terminology consistency
-- Completeness verification
-- Conflict identification between rules
+- **Rule ID format validation** (canonical ASL format)
+- **Location reference validation** against board data
+- **Exception precedence validation**
+- **Module compatibility checking**
+- **Circular dependency detection**
+- **Terminology consistency** (CAPS terms)
 
 ### Graph vs Vector: Complementary Technologies
 
 **LimboDancer.MCP.Graph.CosmosGremlin** stores **structured relationships**:
-- Entities and their connections (e.g., "Elite Unit" IS-A "Infantry Unit")
-- Rule dependencies (e.g., "Rule 7.4.2" HAS-EXCEPTION "Elite Exception")
-- Preconditions and effects (e.g., "Enter Building" REQUIRES "Movement Points > 0")
-- Enables graph traversal queries like "What exceptions apply to this rule?"
+- Rule hierarchies with canonical IDs (e.g., "10.211" CHILD-OF "10.21")
+- Exception chains with precedence weights
+- Phase-based rule activation
+- Cross-module references
 
 **LimboDancer.MCP.Vector.AzureSearch** handles **semantic similarity**:
-- Stores rule text with embeddings for meaning-based search
-- Finds contextually similar rules even with different wording
-- Enables queries like "Find all rules about movement in difficult terrain"
-- Provides hybrid search (keyword + vector) for better recall
+- Rule text with embeddings for meaning-based search
+- Example text with location references
+- Matrix rule content
+- Hybrid search with ontology metadata
 
-**How they work together**:
+**How they work together with spatial plugins**:
 
 ```mermaid
 flowchart LR
-    Q[Query: Can tanks<br/>cross rivers?] --> QE[Query Engine]
+    Q[Query: Can tanks at 3K3<br/>cross river at 3K4?] --> QE[Query Engine]
     
     QE --> VS[Vector Search]
     QE --> GS[Graph Store]
+    QE --> SP[Spatial Plugin]
     
-    VS --> R1[Find semantically<br/>similar rules about<br/>river crossing]
+    VS --> R1[Find river<br/>crossing rules]
     
     GS --> R2[Traverse: Tank<br/>→ Vehicle Rules<br/>→ Terrain Restrictions]
     
-    R1 --> A[Combined Answer:<br/>Rules + Exceptions<br/>+ Related Context]
+    SP --> R3[Check terrain<br/>at 3K4, calculate<br/>movement cost]
+    
+    R1 --> A[Combined Answer:<br/>Rules + Exceptions<br/>+ Spatial Context]
     R2 --> A
+    R3 --> A
 ```
-
-Vector Search finds relevant content by meaning, while Graph Store navigates exact relationships and rule hierarchies. Together they provide both broad discovery and precise traversal - essential for complex rulebooks where a single question might involve multiple interconnected rules.
 
 ---
 
@@ -197,15 +242,38 @@ Vector Search finds relevant content by meaning, while Graph Store navigates exa
 
 ### MCP Tool Interface
 
-The system provides a set of MCP tools for ontology extraction, query, and validation operations, implemented as .NET classes with JSON schema definitions.
+Enhanced tools for Phase 3 functionality:
+
+```csharp
+public class OntologyExtractionTool : IMcpTool
+{
+    public Task<OntologyGraph> ExtractOntology(
+        string documentPath, 
+        string systemType = "Generic")  // Plugin selection
+    {
+        // Preserves canonical rule IDs
+        // Handles nested exceptions
+        // Extracts matrix rules
+    }
+    
+    public Task<QueryResult> Query(
+        string ontologyId, 
+        Query query)
+    {
+        // Uses appropriate spatial plugin
+        // Enriches state with reference data
+        // Handles dynamic terrain state
+    }
+}
+```
 
 ### Key Features
 
-1. **Dynamic Node Creation** - Discovers node types from document patterns
-2. **Relationship Mining** - Extracts connections from natural language
-3. **State Management** - Tracks conditional rule activation
-4. **Example Integration** - Links examples to their parent rules
-5. **Multi-format Support** - Handles various rulebook structures
+1. **Canonical ID Preservation** - Never modifies rule numbering
+2. **Nested Exception Handling** - Supports EXC within EXC patterns
+3. **Plugin Architecture** - Domain logic separation
+4. **Dynamic State Management** - Terrain modifications and unit movement
+5. **Reference Data Integration** - JSON documents for spatial data
 
 ### Generation Pipeline
 
@@ -213,28 +281,28 @@ The system provides a set of MCP tools for ontology extraction, query, and valid
 flowchart TD
   DOC[Documents] --> ING[Ingest & Chunk]
   API[OpenAPI Specs] --> ING
-  ING --> EXT[Extract Candidates]
-  EXT --> SCORE[Score & Align]
-  SCORE --> GATE{Auto-Publish?}
-  GATE -->|Yes| PUB[Publish to Ontology]
-  GATE -->|No| PROP[Proposals Queue]
-  PROP --> REV[Human Review]
-  REV --> PUB
-  PUB --> SYNC[Sync Downstream]
+  MAP[Map Data] --> REF[Reference Store]
+  ING --> EXT[Extract with<br/>Pattern Recognition]
+  EXT --> PRES[Preserve<br/>Canonical IDs]
+  PRES --> REL[Build<br/>Relationships]
+  REL --> VAL[Validate<br/>Cross-References]
+  VAL --> PUB[Publish to<br/>Ontology]
+  PUB --> SYNC[Sync with<br/>Spatial Plugins]
+  REF --> SYNC
 ```
 
 ### Governance
 
-- **Approval Gates**: New classes require human review
-- **Constraints**: SHACL-style validators enforce rules
-- **Provenance**: Every artifact tracks source documents
-- **Versioning**: Channels enable controlled evolution
+- **Rule ID Integrity**: Canonical format enforcement
+- **Location Validation**: Board reference checking
+- **Exception Precedence**: Weight assignment rules
+- **Module Compatibility**: Cross-module validation
 
 ### Export Formats
 
-- **JSON-LD**: Native format with @context
-- **Turtle/RDF**: For external reasoning systems
-- **Graph Schema**: Vertex/edge manifest for Gremlin
+- **JSON-LD**: With preserved rule IDs
+- **Turtle/RDF**: Including spatial predicates
+- **Plugin Schemas**: Domain-specific formats
 
 ---
 
@@ -273,40 +341,52 @@ public class Message
 - Hybrid search (BM25 + vector)
 - Ontology filters (class, uri, tags)
 - Multi-tenant support via tenant/package/channel fields
+- Rule ID preservation in metadata
 
 ### 3. Cosmos Gremlin Graph Scaffold
 
 **Files**: `src/LimboDancer.MCP.Graph.CosmosGremlin/{GremlinClientFactory.cs, GraphStore.cs, Preconditions.cs, Effects.cs}`
 
 **Capabilities**:
-- Upsert vertices/edges for core classes
-- Precondition evaluation helpers
-- Effect commit mechanisms
-- Tenant-prefixed IDs or property guards
+- Upsert vertices/edges for enhanced node types
+- Exception precedence tracking
+- Rule hierarchy navigation
+- Cross-module reference support
 
-### 4. MCP Tool Surface
+### 4. Spatial Plugin System (Phase 3)
 
-**Tools Implemented**:
-- `history.get` / `history.append` - Session and message management
-- `memory.search` - Vector retrieval with ontology filters
-- `graph.query` - Knowledge graph inspection
+**Files**: `src/LimboDancer.MCP.Core/Plugins/{ISpatialPlugin.cs, ASLSpatialPlugin.cs}`
 
-Each tool's `input_schema` embeds JSON-LD `@context` for ontology-bound fields.
+**Interface**:
+```csharp
+public interface ISpatialPlugin
+{
+    string SystemType { get; }
+    object ParseLocation(string location);
+    bool CheckVisibility(object from, object to, GameState state);
+    void ApplyModification(GameState state, string type, object target);
+}
+```
 
-### 5. Planner with Precondition Gate (Not Yet Implemented)
+### 5. Reference Data Management
 
-**Planned Files**: `src/LimboDancer.MCP.Core/Planning/{PlanStep.cs, Planner.cs}`
+**Files**: `src/LimboDancer.MCP.Core/ReferenceData/{GameBoard.cs, HexState.cs}`
 
-**Planned Design**:
-- Multi-step tool orchestration
-- Precondition validation against graph state
-- Effect management after tool execution
-- Typed ReAct implementation for reasoning
-- Failure handling and retry strategies
+**Components**:
+- Pre-computed LOS storage
+- Dynamic terrain overlay
+- Unit movement tracking
+- State enrichment pipeline
 
-**Note**: This component is needed for intelligent multi-tool scenarios but is not yet implemented.
+### 6. MCP Tool Surface
 
-### 6. HTTP Transport with SSE Events
+**Enhanced Tools**:
+- `ontology.extract` - With system type parameter
+- `ontology.query` - Plugin-aware spatial queries
+- `reference.load` - Board/map data ingestion
+- `state.update` - Dynamic modifications
+
+### 7. HTTP Transport with SSE Events
 
 **Files**: `src/LimboDancer.MCP.McpServer.Http/{AuthExtensions.cs, HttpTransport.cs, ChatStreamEndpoint.cs}`
 
@@ -316,25 +396,22 @@ Each tool's `input_schema` embeds JSON-LD `@context` for ontology-bound fields.
 - Chat streaming endpoints
 - Role-based policies (Reader/Operator)
 
-### 7. Operator Console (Blazor Server)
+### 8. Operator Console (Blazor Server)
 
-**Pages**:
-- Sessions: View/tag sessions and messages
-- Memory: Search vector store, manual ingestion
-- Graph: Explore KG vertices and edges
-- Ingestion: Monitor ingestion pipelines
-- Live: SSE event tail and health monitoring
+**Enhanced Pages**:
+- Rules: Browse extracted ontology with canonical IDs
+- Maps: View board data and current state
+- Exceptions: Trace precedence chains
+- Validation: Check rule consistency
 
-### 8. Developer CLI
+### 9. Developer CLI
 
-**Commands**:
+**Enhanced Commands**:
 ```bash
-limbodancer db migrate                  # Run EF migrations
-limbodancer vector init --tenant acme   # Initialize AI Search index
-limbodancer mem add --file doc.md       # Add to vector store
-limbodancer mem search --query "..."    # Search vectors
-limbodancer kg ping                     # Test Gremlin connectivity
-limbodancer serve --stdio               # Run MCP server
+limbodancer ontology extract --file asl.pdf --type ASL
+limbodancer ontology validate --id asl-rules-v1
+limbodancer reference load --board 1 --data board1.json
+limbodancer query --ontology asl-rules --location 3K3
 ```
 
 ---
@@ -378,6 +455,11 @@ docker run --name pg-limbo -e POSTGRES_PASSWORD=postgres -p 5432:5432 -d postgre
     "Database": "ldm",
     "Graph": "kg",
     "Key": "<primary-key>"
+  },
+  "Plugins": {
+    "ASL": "LimboDancer.MCP.Plugins.ASL",
+    "DnD": "LimboDancer.MCP.Plugins.DnD",
+    "Chess": "LimboDancer.MCP.Plugins.Chess"
   }
 }
 ```
@@ -389,6 +471,7 @@ A PowerShell script (`scripts\bootstrap.ps1`) creates the complete solution stru
 - Adds required NuGet packages
 - Generates initial file stubs
 - Sets up project dependencies
+- Includes plugin templates
 
 ---
 
@@ -396,9 +479,9 @@ A PowerShell script (`scripts\bootstrap.ps1`) creates the complete solution stru
 
 ### Use Cases
 
-- **Complex wargame rules** (ASL, GMT games)
-- **RPG systems** (D&D, Pathfinder)
-- **Board game manuals**
+- **Complex wargame rules** (ASL, GMT games) - with spatial awareness
+- **RPG systems** (D&D, Pathfinder) - grid-based mechanics
+- **Board game manuals** - with dynamic state
 - **Legal/regulatory documents**
 - **Technical specifications**
 - **API documentation**
@@ -406,13 +489,13 @@ A PowerShell script (`scripts\bootstrap.ps1`) creates the complete solution stru
 
 ### Benefits
 
-- **Dynamic Knowledge** - Transforms static rules into queryable, dynamic knowledge graphs
-- **Intelligent Assistance** - Enables context-aware rule application and assistance
-- **Consistency Validation** - Ensures rule consistency across complex systems
-- **Conditional Logic Support** - Handles complex conditional and exception-based logic
-- **Contextual Application** - Provides rule guidance based on current game/system state
-- **Cross-Reference Resolution** - Automatically resolves and validates rule references
-- **Version Control** - Manages rule evolution through channel-based versioning
+- **Canonical Reference Preservation** - Rule IDs remain exactly as published
+- **Spatial Intelligence** - Location-aware queries via plugins
+- **Dynamic State Tracking** - Handles terrain changes and unit movement
+- **Exception Precedence** - Correctly resolves nested rule modifications
+- **Multi-System Support** - Plugin architecture for different domains
+- **Performance Optimization** - Pre-computed spatial data with dynamic overlay
+- **Complete Rule Context** - Matrix rules, examples, and cross-references
 
 ---
 
@@ -435,19 +518,46 @@ A PowerShell script (`scripts\bootstrap.ps1`) creates the complete solution stru
 
 #### Beta Phase (Milestones 4-9)
 - ✅ **Milestone 4 – Ontology v1**: JSON-LD context, base classes, tool schema mapping
-- **Milestone 4.5 – Rule Extraction Engine**: Pattern recognition, exception detection, cross-reference resolution
-- **Milestone 4.6 – Advanced Ontology Features**: Conditional activation, example integration, validation framework
-- 🔲 **Milestone 5 – Planner + Precondition/Effect Checks**: Typed ReAct loop, KG validation (NOT STARTED)
+- **Milestone 4.5 – Phase 3 Rule Extraction Engine**: 
+  - Canonical rule ID preservation
+  - Nested exception detection with precedence
+  - Matrix rule extraction
+  - Location reference validation
+  - Cross-module reference resolution
+- **Milestone 4.6 – Spatial Plugin Architecture**:
+  - ISpatialPlugin interface design
+  - ASL hex-based plugin
+  - D&D grid-based plugin
+  - Generic fallback plugin
+- **Milestone 4.7 – Dynamic State Management**:
+  - Reference data integration (JSON documents)
+  - Pre-computed LOS with modification patterns
+  - Unit movement tracking
+  - Terrain change handling
+- **Milestone 5 – Planner + Precondition/Effect Checks**: Typed ReAct loop, KG validation
 - ✅ **Milestone 6 – Knowledge Graph Integration**: Cosmos DB Gremlin, context expansion
 - ✅ **Milestone 7 – Ingestion Pipeline**: Event-driven document processing
-- **Milestone 7.5 – Document Ingestion Pipeline**: Smart chunking for rule documents, metadata extraction, embedding generation, tenant-scoped indexing
-- **Milestone 7.6 – Hybrid Search Optimization**: Semantic configuration, custom scoring profiles, cross-reference preservation, ontology metadata integration
+- **Milestone 7.5 – Enhanced Document Processing**:
+  - Rule-aware chunking preserving structure
+  - Example extraction with location validation
+  - Matrix table recognition
+- **Milestone 7.6 – Spatial-Aware Search**:
+  - Location-based query enrichment
+  - Hybrid search with spatial context
+  - Cross-reference preservation
 - ✅ **Milestone 8 – HTTP Transport**: Streamable HTTP endpoints, Entra ID auth
-- **Milestone 9 – Hardening and Unit Tests**: Testing and debugging
-- **Milestone 9.5 – Ontology Query & Validation**: Contextual queries, consistency checking, exception application
+- **Milestone 9 – Validation Framework**:
+  - Rule ID format checking
+  - Location reference validation
+  - Exception precedence verification
+  - Module compatibility testing
 
 #### 1.0 Release (Milestones 10-13)
-- **Milestone 10 – Blazor Server Operator Console**: Admin dashboards
+- **Milestone 10 – Enhanced Operator Console**:
+  - Rule browser with canonical IDs
+  - Map viewer with current state
+  - Exception trace visualization
+  - Validation dashboards
 - **Milestone 11 – Multi-tenant hardening**: Proven isolation across all components
 - **Milestone 12 – Observability & Governance**: OTEL traces, SHACL validators
 - **Milestone 13 – Packaging & 1.0 Release**: Containers, CI/CD, documentation
@@ -466,20 +576,21 @@ A PowerShell script (`scripts\bootstrap.ps1`) creates the complete solution stru
 - HTTP Transport with SSE
 - Authentication via Entra ID
 
-#### In Progress
-- Ontology Generator for automated extraction
-- Change Feed synchronization
-- Operator Console review UI
-- Gremlin graph implementation
+#### In Progress (Phase 3)
+- Enhanced rule extraction engine
+- Spatial plugin architecture
+- Dynamic state management
+- Reference data integration
+- Canonical ID preservation
+- Nested exception handling
 
 #### Not Started
 - Planner with precondition/effect checks
-- Rule extraction engine
-- Advanced ontology query features
+- Advanced spatial reasoning
+- Cross-ontology mapping
 
 #### Future
 - OWL reasoning integration
-- Cross-ontology mapping
 - Advanced governance rules
 - Production hardening
 - Comprehensive test coverage
@@ -493,6 +604,15 @@ A PowerShell script (`scripts\bootstrap.ps1`) creates the complete solution stru
 **LimboDancer.MCP.Core** (Base library):
 - Target: .NET 9.0
 - No external dependencies (contracts only)
+- Includes: ISpatialPlugin interface
+
+**LimboDancer.MCP.Plugins.ASL**:
+- Dependencies: Core
+- Implements: Hex-based spatial logic
+
+**LimboDancer.MCP.Plugins.DnD**:
+- Dependencies: Core
+- Implements: Grid-based mechanics
 
 **LimboDancer.MCP.Storage**:
 - Dependencies: 
@@ -526,15 +646,23 @@ A PowerShell script (`scripts\bootstrap.ps1`) creates the complete solution stru
 
 ### Key Implementation Files
 
-**Ontology Implementation**:
-- `OntologyStore.cs` - In-memory ontology cache with indexes
-- `CosmosOntologyRepo.cs` - Cosmos DB persistence with HPK
-- `JsonLdExportService.cs` - JSON-LD export functionality
+**Phase 3 Ontology Implementation**:
+- `OntologyExtractionEngine.cs` - Enhanced extraction with canonical IDs
+- `PatternExtractor.cs` - Nested exception and matrix rule detection
+- `ReferenceDataManager.cs` - JSON document integration
+- `SpatialPluginRegistry.cs` - Plugin discovery and loading
+
+**Enhanced Node Types**:
+- `RuleNode.cs` - Preserves canonical IDs
+- `ExceptionNode.cs` - Precedence weights
+- `MatrixRuleNode.cs` - Multi-dimensional tables
+- `HexState.cs` - Dynamic terrain tracking
 
 **MCP Tools**:
-- `HistoryGetTool.cs` / `HistoryAppendTool.cs` - Session management
-- `MemorySearchTool.cs` - Vector search integration
-- `GraphQueryTool.cs` - Knowledge graph queries
+- `OntologyExtractionTool.cs` - System type parameter
+- `SpatialQueryTool.cs` - Plugin-aware queries
+- `ReferenceDataTool.cs` - Board data loading
+- `StateManagementTool.cs` - Dynamic modifications
 
 **Infrastructure**:
 - `SearchIndexBuilder.cs` - Azure AI Search index management
@@ -551,25 +679,29 @@ A PowerShell script (`scripts\bootstrap.ps1`) creates the complete solution stru
 - Cross-tenant queries explicitly forbidden
 - JWT authentication via Entra ID
 - Role-based access control (Reader/Operator)
+- Plugin sandboxing for untrusted domains
 
 ### Performance Optimizations
-- In-memory ontology caching
-- Connection pooling for Gremlin
-- Hybrid search (vector + BM25)
-- Session consistency for Cosmos DB
+- Pre-computed spatial data (LOS)
+- Dynamic state overlay pattern
+- Canonical ID indexing
+- Plugin-specific caching
+- Lazy reference data loading
 
 ### Failure Modes and Resilience
 - Circuit breakers for LLM throttling
 - Graceful degradation to BM25 search
 - Retry with backoff for Cosmos 429s
 - Dead letter queue for Service Bus
+- Plugin fallback to generic
 
 ### Future Considerations
 - .NET Aspire adoption for local orchestration
 - Graph engine evaluation (Cosmos Gremlin vs Neo4j)
 - RDF/OWL reasoning integration
 - Advanced planner (DAG/graph executor)
+- Multi-board spatial composition
 
 ---
 
-*This document represents the complete LimboDancer.MCP system design, combining architectural vision with concrete implementation details. The source code serves as the authoritative reference for all implementation specifics.*
+*This document represents the complete LimboDancer.MCP system design, combining architectural vision with concrete implementation details including Phase 3 enhancements. The source code serves as the authoritative reference for all implementation specifics.*

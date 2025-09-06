@@ -1,5 +1,8 @@
 # Phase 3: Ontology Extraction Engine Design Plan
 
+## The Challenge
+Balance the need to process domain-speficic semantics/data (such as ASL game structures) while keeping the core engine generic.
+
 ## Overview
 
 The Ontology Extraction Engine transforms complex rulebooks into queryable knowledge graphs, handling sophisticated patterns like ASL's nested exceptions, cross-references, and conditional logic. The system preserves canonical rule identifiers and integrates spatial reference data for complete rule interpretation.
@@ -23,6 +26,12 @@ The Ontology Extraction Engine transforms complex rulebooks into queryable knowl
 - **Unified Hex State**: Single model for terrain changes and unit positions
 - **Modification Patterns**: Store how terrain changes affect LOS
 - **Runtime Calculation**: Apply modifications to base calculations
+
+### 4. Plugin Architecture for Domain Separation
+- **Generic Core**: Ontology system remains domain-agnostic
+- **Spatial Plugins**: Domain-specific logic (hex, grid, algebraic notation) in plugins
+- **Clean Interface**: ISpatialPlugin abstracts location parsing and spatial operations
+- **Runtime Selection**: Plugins loaded based on ontology's system type metadata
 
 ## System Architecture
 
@@ -487,7 +496,7 @@ var ruleNode = new RuleNode {
 ```
 
 ### 2. **Board Data Integration**
-Hex management approach:
+Your hex management approach is perfect:
 ```json
 {
   "K3": {
@@ -892,3 +901,308 @@ public class OntologyExtractionTool : IMcpTool
 }
 ```
 Extended to support reference data loading alongside rule extraction.
+
+---
+
+## Plugin Architecture for Domain Separation
+
+### Design Goal
+Maintain a generic ontology system while supporting domain-specific spatial logic, state management, and rule interpretations through a plugin architecture.
+
+### Core Plugin Interface
+
+```csharp
+public interface ISpatialPlugin
+{
+    string SystemType { get; }  // "ASL", "D&D", "Chess", "Go"
+    
+    // Location handling
+    object ParseLocation(string location);
+    string FormatLocation(object location);
+    
+    // Spatial relationships
+    bool CheckVisibility(object from, object to, GameState state);
+    double CalculateDistance(object from, object to);
+    List<object> GetAdjacentLocations(object location);
+    
+    // State modifications
+    void ApplyModification(GameState state, string modificationType, object target);
+    Dictionary<string, object> GetLocationProperties(object location);
+    
+    // Reference data
+    string GetReferenceDataSchema();
+    void ValidateReferenceData(JsonDocument data);
+}
+```
+
+### Domain-Specific Implementations
+
+**ASL Plugin:**
+```csharp
+public class ASLSpatialPlugin : ISpatialPlugin
+{
+    public string SystemType => "ASL";
+    private GameBoard _board;  // ASL-specific hex board
+    
+    public object ParseLocation(string location)
+    {
+        // "3K3" → { Board: 3, Hex: "K3" }
+        var match = Regex.Match(location, @"(\d+)([A-Z]+\d+)");
+        return new HexCoordinate 
+        { 
+            Board = int.Parse(match.Groups[1].Value),
+            Hex = match.Groups[2].Value 
+        };
+    }
+    
+    public bool CheckVisibility(object from, object to, GameState state)
+    {
+        // Uses pre-computed LOS with dynamic modifications
+        return _board.CheckLOS(from.ToString(), to.ToString());
+    }
+    
+    public void ApplyModification(GameState state, string type, object target)
+    {
+        switch (type)
+        {
+            case "building_to_rubble":
+                _board.ApplyTerrainChange(target.ToString(), "Rubble");
+                break;
+            case "place_smoke":
+                _board.AddCounter(target.ToString(), new Counter { Type = "Smoke" });
+                break;
+        }
+    }
+}
+```
+
+**D&D Plugin:**
+```csharp
+public class DnDSpatialPlugin : ISpatialPlugin
+{
+    public string SystemType => "D&D";
+    
+    public object ParseLocation(string location)
+    {
+        // "B5" → { X: 2, Y: 5 } (grid square)
+        return new GridCoordinate 
+        { 
+            X = location[0] - 'A' + 1,
+            Y = int.Parse(location.Substring(1))
+        };
+    }
+    
+    public double CalculateDistance(object from, object to)
+    {
+        var f = (GridCoordinate)from;
+        var t = (GridCoordinate)to;
+        // D&D 5e diagonal movement
+        var dx = Math.Abs(f.X - t.X);
+        var dy = Math.Abs(f.Y - t.Y);
+        return Math.Max(dx, dy) * 5;  // 5 feet per square
+    }
+}
+```
+
+**Chess Plugin:**
+```csharp
+public class ChessSpatialPlugin : ISpatialPlugin
+{
+    public string SystemType => "Chess";
+    
+    public object ParseLocation(string location)
+    {
+        // "e4" → { File: 5, Rank: 4 }
+        return new ChessSquare
+        {
+            File = location[0] - 'a' + 1,
+            Rank = location[1] - '0'
+        };
+    }
+    
+    public List<object> GetAdjacentLocations(object location)
+    {
+        // Returns all 8 surrounding squares
+        var square = (ChessSquare)location;
+        var adjacent = new List<object>();
+        for (int df = -1; df <= 1; df++)
+            for (int dr = -1; dr <= 1; dr++)
+                if (df != 0 || dr != 0)
+                    adjacent.Add(new ChessSquare 
+                    { 
+                        File = square.File + df, 
+                        Rank = square.Rank + dr 
+                    });
+        return adjacent;
+    }
+}
+```
+
+### Plugin Registration and Discovery
+
+```csharp
+public class PluginRegistry
+{
+    private readonly Dictionary<string, Type> _plugins = new()
+    {
+        ["ASL"] = typeof(ASLSpatialPlugin),
+        ["D&D"] = typeof(DnDSpatialPlugin),
+        ["Chess"] = typeof(ChessSpatialPlugin),
+        ["Generic"] = typeof(GenericSpatialPlugin)
+    };
+    
+    public ISpatialPlugin CreatePlugin(string systemType)
+    {
+        if (_plugins.TryGetValue(systemType, out var pluginType))
+        {
+            return (ISpatialPlugin)Activator.CreateInstance(pluginType);
+        }
+        return new GenericSpatialPlugin();  // Fallback
+    }
+}
+```
+
+### Integration with Query Engine
+
+```csharp
+public class OntologyQueryEngine
+{
+    private readonly OntologyGraph _graph;
+    private ISpatialPlugin _spatialPlugin;
+    
+    public void SetSystemType(string systemType)
+    {
+        _spatialPlugin = _pluginRegistry.CreatePlugin(systemType);
+    }
+    
+    private void EnrichStateWithLocation(GameState state, string location)
+    {
+        if (_spatialPlugin != null)
+        {
+            var parsed = _spatialPlugin.ParseLocation(location);
+            var properties = _spatialPlugin.GetLocationProperties(parsed);
+            
+            foreach (var prop in properties)
+            {
+                state.StateVariables[$"{location}_{prop.Key}"] = prop.Value;
+            }
+        }
+    }
+    
+    public bool CheckSpatialRelationship(string from, string to, string relationship)
+    {
+        if (_spatialPlugin == null) return false;
+        
+        var fromLoc = _spatialPlugin.ParseLocation(from);
+        var toLoc = _spatialPlugin.ParseLocation(to);
+        
+        return relationship switch
+        {
+            "visible" => _spatialPlugin.CheckVisibility(fromLoc, toLoc, _currentState),
+            "adjacent" => _spatialPlugin.GetAdjacentLocations(fromLoc).Contains(toLoc),
+            _ => false
+        };
+    }
+}
+```
+
+### MCP Tool Integration
+
+```csharp
+public class OntologyExtractionTool : IMcpTool
+{
+    private readonly PluginRegistry _pluginRegistry = new();
+    
+    public async Task<OntologyGraph> ExtractOntology(
+        string documentPath, 
+        string systemType = "Generic")  // MCP parameter
+    {
+        var pipeline = new ExtractionPipeline();
+        var ontology = await pipeline.Extract(documentPath);
+        
+        // Tag ontology with system type
+        ontology.Metadata["system_type"] = systemType;
+        ontology.Metadata["spatial_plugin"] = systemType;
+        
+        return ontology;
+    }
+    
+    public async Task<QueryResult> Query(
+        string ontologyId, 
+        Query query)
+    {
+        var ontology = await LoadOntology(ontologyId);
+        var systemType = ontology.Metadata["system_type"] ?? "Generic";
+        
+        // Configure query engine with appropriate plugin
+        _queryEngine.SetSystemType(systemType);
+        
+        // Query remains generic - plugin handles domain specifics
+        return await _queryEngine.Execute(query);
+    }
+    
+    public async Task LoadReferenceData(
+        string ontologyId, 
+        string dataType,
+        string jsonPath)
+    {
+        var ontology = await LoadOntology(ontologyId);
+        var plugin = _pluginRegistry.CreatePlugin(ontology.Metadata["system_type"]);
+        
+        // Validate data against plugin's expected schema
+        var jsonData = JsonDocument.Parse(File.ReadAllText(jsonPath));
+        plugin.ValidateReferenceData(jsonData);
+        
+        await _referenceStore.Store(ontologyId, dataType, jsonData);
+    }
+}
+```
+
+### MCP Schema (Generic)
+
+```json
+{
+  "tools": [
+    {
+      "name": "ontology.extract",
+      "parameters": {
+        "document_path": { "type": "string" },
+        "system_type": { 
+          "type": "string",
+          "enum": ["ASL", "D&D", "Chess", "Generic"],
+          "default": "Generic"
+        }
+      }
+    },
+    {
+      "name": "ontology.query",
+      "parameters": {
+        "ontology_id": { "type": "string" },
+        "query": {
+          "type": "object",
+          "properties": {
+            "question": { "type": "string" },
+            "locations": { 
+              "type": "array",
+              "items": { "type": "string" },
+              "description": "Domain-specific location strings"
+            },
+            "context": { "type": "object" }
+          }
+        }
+      }
+    }
+  ]
+}
+```
+
+### Benefits of Plugin Architecture
+
+1. **Clean Separation** - Core system remains purely generic
+2. **Extensibility** - New game systems added without modifying core
+3. **Type Safety** - Each plugin defines its own coordinate types
+4. **Performance** - Plugins can optimize for their specific needs
+5. **Validation** - Each plugin validates its own reference data format
+6. **MCP Transparency** - Claude doesn't need domain knowledge
+
+The plugin architecture allows the ontology system to remain generic while supporting the specific spatial and state management needs of any rule system.
