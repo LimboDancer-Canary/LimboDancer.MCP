@@ -39,7 +39,7 @@ public class McpServerE2ETests : IClassFixture<WebApplicationFactory<Program>>
         var response = await _client.PostAsJsonAsync("/api/mcp/initialize", new { });
 
         // Assert
-        response.Should().BeSuccessful();
+        response.IsSuccessStatusCode.Should().BeTrue();
         var content = await response.Content.ReadFromJsonAsync<dynamic>();
         content.Should().NotBeNull();
         content.protocolVersion.Should().Be("2024-11-01");
@@ -52,7 +52,7 @@ public class McpServerE2ETests : IClassFixture<WebApplicationFactory<Program>>
         var response = await _client.GetAsync("/api/mcp/tools");
 
         // Assert
-        response.Should().BeSuccessful();
+        response.IsSuccessStatusCode.Should().BeTrue();
         var content = await response.Content.ReadFromJsonAsync<dynamic>();
         content.Should().NotBeNull();
         content.tools.Should().NotBeNull();
@@ -72,7 +72,7 @@ public class McpServerE2ETests : IClassFixture<WebApplicationFactory<Program>>
         var response = await _client.PostAsJsonAsync("/api/mcp/tools/history_get", toolInput);
 
         // Assert
-        response.Should().BeSuccessful();
+        response.IsSuccessStatusCode.Should().BeTrue();
         var content = await response.Content.ReadFromJsonAsync<dynamic>();
         content.Should().NotBeNull();
         content.toolResult.Should().NotBeNull();
@@ -95,7 +95,7 @@ public class McpServerE2ETests : IClassFixture<WebApplicationFactory<Program>>
         var response = await _client.GetAsync("/api/mcp/manifest");
 
         // Assert
-        response.Should().BeSuccessful();
+        response.IsSuccessStatusCode.Should().BeTrue();
         var content = await response.Content.ReadFromJsonAsync<dynamic>();
         content.Should().NotBeNull();
         content.name.Should().Be("LimboDancer.MCP");
