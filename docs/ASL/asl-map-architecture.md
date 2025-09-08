@@ -392,6 +392,10 @@ This schema captures every possible property a hex can have in ASL. Each field m
       "pattern": "^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$",
       "description": "Hex template GUID"
     },
+    "description": {
+    "type": "string",
+    "description": "Human-readable description of the hex template"
+    },
     "baseTerrain": {
       "type": "string",
       "description": "Primary terrain type",
