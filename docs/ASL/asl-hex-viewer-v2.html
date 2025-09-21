@@ -1,0 +1,564 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ASL Terrain Type SVG Hex Viewer</title>
+    <style>
+        :root {
+            /* Natural Terrain */
+            --open-ground: #90a955;
+            --woods: #2d5016;
+            --light-woods: #4a6b2e;
+            --brush: #6b7a4f;
+            --orchard: #7a8556;
+            --grain: #daa520;
+            --marsh: #3b7a57;
+            --crag: #8b8680;
+            --graveyard: #7d7b77;
+            
+            /* Water */
+            --water-blue: #4682b4;
+            --water-shallow: #5f9ea0;
+            --stream-blue: #6495ed;
+            
+            /* Urban/Damaged */
+            --rubble: #9e8b7a;
+            --runway: #696969;
+            --shellhole-brown: #7a6651;
+            
+            /* Buildings */
+            --building-wood: #8b6914;
+            --building-wood-dark: #654b0e;
+            --building-stone: #8b7d6b;
+            --building-stone-dark: #5c5248;
+            --building-stone-2: #6b6457;
+            --building-factory: #6b5d4f;
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Arial, sans-serif;
+            display: flex;
+            height: 100vh;
+            background: #f5f5f5;
+        }
+
+        /* Sidebar */
+        .sidebar {
+            width: 300px;
+            background: #fff;
+            border-right: 1px solid #ddd;
+            overflow-y: auto;
+            padding: 20px;
+        }
+
+        h1 {
+            font-size: 20px;
+            margin-bottom: 20px;
+            color: #333;
+        }
+
+        h2 {
+            font-size: 14px;
+            text-transform: uppercase;
+            color: #666;
+            margin: 20px 0 10px 0;
+            font-weight: 600;
+        }
+
+        .terrain-list {
+            list-style: none;
+        }
+
+        .terrain-item {
+            padding: 8px 12px;
+            margin: 2px 0;
+            cursor: pointer;
+            border-radius: 4px;
+            transition: background-color 0.2s;
+            font-size: 14px;
+        }
+
+        .terrain-item:hover {
+            background: #f0f0f0;
+        }
+
+        .terrain-item.active {
+            background: #e3f2fd;
+            color: #1976d2;
+            font-weight: 500;
+        }
+
+        /* Main viewing area */
+        .main {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            background: #fafafa;
+        }
+
+        .header {
+            background: #fff;
+            border-bottom: 1px solid #ddd;
+            padding: 20px;
+        }
+
+        .header h3 {
+            font-size: 18px;
+            color: #333;
+        }
+
+        .header .subtitle {
+            font-size: 14px;
+            color: #666;
+            margin-top: 5px;
+        }
+
+        .viewer {
+            flex: 1;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 40px;
+        }
+
+        .hex-container {
+            background: white;
+            border-radius: 8px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+            padding: 40px;
+        }
+
+        svg {
+            width: 300px;
+            height: 260px;
+        }
+
+        .controls {
+            background: #fff;
+            border-top: 1px solid #ddd;
+            padding: 20px;
+            display: flex;
+            gap: 20px;
+            align-items: center;
+        }
+
+        .checkbox-group {
+            display: flex;
+            gap: 20px;
+            font-size: 14px;
+        }
+
+        label {
+            display: flex;
+            align-items: center;
+            gap: 5px;
+            cursor: pointer;
+        }
+
+        input[type="checkbox"] {
+            cursor: pointer;
+        }
+    </style>
+</head>
+<body>
+    <div class="sidebar">
+        <h1>ASL Terrain Types</h1>
+        
+        <h2>Natural Terrain</h2>
+        <ul class="terrain-list">
+            <li class="terrain-item" data-terrain="openGround">Open Ground</li>
+            <li class="terrain-item" data-terrain="woods">Woods</li>
+            <li class="terrain-item" data-terrain="lightWoods">Light Woods</li>
+            <li class="terrain-item" data-terrain="brush">Brush</li>
+            <li class="terrain-item" data-terrain="orchard">Orchard</li>
+            <li class="terrain-item" data-terrain="vineyard">Vineyard</li>
+            <li class="terrain-item" data-terrain="grain">Grain</li>
+            <li class="terrain-item" data-terrain="marsh">Marsh</li>
+            <li class="terrain-item" data-terrain="mudflat">Mudflat</li>
+            <li class="terrain-item" data-terrain="crag">Crag</li>
+            <li class="terrain-item" data-terrain="graveyard">Graveyard</li>
+        </ul>
+        
+        <h2>Water Features</h2>
+        <ul class="terrain-list">
+            <li class="terrain-item" data-terrain="stream">Stream</li>
+            <li class="terrain-item" data-terrain="river">River</li>
+            <li class="terrain-item" data-terrain="canal">Canal</li>
+            <li class="terrain-item" data-terrain="pond">Pond</li>
+            <li class="terrain-item" data-terrain="lake">Lake</li>
+            <li class="terrain-item" data-terrain="ocean">Ocean</li>
+        </ul>
+        
+        <h2>Depression Terrain</h2>
+        <ul class="terrain-list">
+            <li class="terrain-item" data-terrain="gully">Gully</li>
+            <li class="terrain-item" data-terrain="valley">Valley</li>
+        </ul>
+        
+        <h2>Damaged Terrain</h2>
+        <ul class="terrain-list">
+            <li class="terrain-item" data-terrain="shellholes">Shellholes</li>
+            <li class="terrain-item" data-terrain="rubble">Rubble</li>
+            <li class="terrain-item" data-terrain="debris">Debris</li>
+        </ul>
+        
+        <h2>Special Terrain</h2>
+        <ul class="terrain-list">
+            <li class="terrain-item" data-terrain="runway">Runway</li>
+            <li class="terrain-item" data-terrain="villageTerrain">Village Terrain</li>
+            <li class="terrain-item" data-terrain="preparedFireZone">Prepared Fire Zone</li>
+        </ul>
+        
+        <h2>Building Overlays</h2>
+        <ul class="terrain-list">
+            <li class="terrain-item" data-terrain="building-wooden-1">Wooden Building (1L)</li>
+            <li class="terrain-item" data-terrain="building-wooden-2">Wooden Building (2L)</li>
+            <li class="terrain-item" data-terrain="building-stone-1">Stone Building (1L)</li>
+            <li class="terrain-item" data-terrain="building-stone-2">Stone Building (2L)</li>
+            <li class="terrain-item" data-terrain="building-factory">Factory</li>
+            <li class="terrain-item" data-terrain="building-marketplace">Marketplace</li>
+            <li class="terrain-item" data-terrain="building-rowhouse">Rowhouse</li>
+            <li class="terrain-item" data-terrain="building-church">Church</li>
+        </ul>
+    </div>
+    
+    <div class="main">
+        <div class="header">
+            <h3 id="terrainName">Select a Terrain Type</h3>
+            <div class="subtitle" id="terrainDescription">Choose a terrain type from the menu to view its SVG representation</div>
+        </div>
+        
+        <div class="viewer">
+            <div class="hex-container">
+                <svg id="hexSvg" viewBox="0 0 60 52" xmlns="http://www.w3.org/2000/svg">
+                    <defs id="svgDefs">
+                        <!-- Pattern definitions will be added here -->
+                    </defs>
+                    <g id="hexContent">
+                        <!-- Default empty hex with flat-top orientation -->
+                        <polygon points="51.96,13 51.96,39 30,52 8.04,39 8.04,13 30,0" 
+                                fill="#f0f0f0" stroke="#999" stroke-width="0.5"/>
+                        <text x="30" y="26" text-anchor="middle" font-size="8" fill="#999">No terrain selected</text>
+                    </g>
+                </svg>
+            </div>
+        </div>
+        
+        <div class="controls">
+            <div class="checkbox-group">
+                <label>
+                    <input type="checkbox" id="showGrid" checked>
+                    Show Hex Grid
+                </label>
+                <label>
+                    <input type="checkbox" id="showCoords">
+                    Show Coordinates
+                </label>
+                <label>
+                    <input type="checkbox" id="showCenter" checked>
+                    Show Center Dot
+                </label>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Pre-calculated flat-topped hex points for consistency
+        const FLAT_HEX_POINTS = "51.96,13 51.96,39 30,52 8.04,39 8.04,13 30,0";
+
+        // Terrain definitions
+        const terrainTypes = {
+            openGround: {
+                name: 'Open Ground',
+                description: 'Clear terrain with no obstacles or cover',
+                render: (svg, showGrid, showCoords, showCenter) => {
+                    return `
+                        <polygon points="${FLAT_HEX_POINTS}" 
+                                fill="var(--open-ground)" 
+                                stroke="${showGrid ? '#333' : 'none'}" 
+                                stroke-width="0.5"/>
+                        ${showCenter ? '<circle cx="30" cy="26" r="1" fill="#fff" stroke="#333" stroke-width="0.3"/>' : ''}
+                        ${showCoords ? '<text x="30" y="30" text-anchor="middle" font-size="4" fill="#333">E5</text>' : ''}
+                    `;
+                }
+            },
+            woods: {
+                name: 'Woods',
+                description: 'Dense forest terrain providing concealment and cover',
+                render: (svg, showGrid, showCoords, showCenter) => {
+                    // Add woods pattern to defs if not exists
+                    if (!svg.querySelector('#woods-pattern')) {
+                        const defs = svg.querySelector('#svgDefs');
+                        defs.innerHTML += `
+                            <pattern id="woods-pattern" width="20" height="20" patternUnits="userSpaceOnUse">
+                                <rect width="20" height="20" fill="var(--woods)"/>
+                                <circle cx="5" cy="5" r="3" fill="#1a3009" opacity="0.6"/>
+                                <circle cx="15" cy="10" r="2.5" fill="#1a3009" opacity="0.5"/>
+                                <circle cx="8" cy="15" r="3.5" fill="#1a3009" opacity="0.7"/>
+                            </pattern>
+                        `;
+                    }
+                    return `
+                        <polygon points="${FLAT_HEX_POINTS}" 
+                                fill="url(#woods-pattern)" 
+                                stroke="${showGrid ? '#333' : 'none'}" 
+                                stroke-width="0.5"/>
+                        ${showCenter ? '<circle cx="30" cy="26" r="1" fill="#fff" stroke="#333" stroke-width="0.3"/>' : ''}
+                        ${showCoords ? '<text x="30" y="30" text-anchor="middle" font-size="4" fill="#fff">E5</text>' : ''}
+                    `;
+                }
+            },
+            lightWoods: {
+                name: 'Light Woods',
+                description: 'Sparse forest terrain with limited concealment',
+                render: (svg, showGrid, showCoords, showCenter) => {
+                    if (!svg.querySelector('#light-woods-pattern')) {
+                        const defs = svg.querySelector('#svgDefs');
+                        defs.innerHTML += `
+                            <pattern id="light-woods-pattern" width="25" height="25" patternUnits="userSpaceOnUse">
+                                <rect width="25" height="25" fill="var(--light-woods)"/>
+                                <circle cx="8" cy="8" r="2.5" fill="#2d5016" opacity="0.5"/>
+                                <circle cx="18" cy="18" r="2" fill="#2d5016" opacity="0.4"/>
+                            </pattern>
+                        `;
+                    }
+                    return `
+                        <polygon points="${FLAT_HEX_POINTS}" 
+                                fill="url(#light-woods-pattern)" 
+                                stroke="${showGrid ? '#333' : 'none'}" 
+                                stroke-width="0.5"/>
+                        ${showCenter ? '<circle cx="30" cy="26" r="1" fill="#fff" stroke="#333" stroke-width="0.3"/>' : ''}
+                        ${showCoords ? '<text x="30" y="30" text-anchor="middle" font-size="4" fill="#fff">E5</text>' : ''}
+                    `;
+                }
+            },
+            brush: {
+                name: 'Brush',
+                description: 'Light vegetation providing hindrance but limited cover',
+                render: (svg, showGrid, showCoords, showCenter) => {
+                    if (!svg.querySelector('#brush-pattern')) {
+                        const defs = svg.querySelector('#svgDefs');
+                        defs.innerHTML += `
+                            <pattern id="brush-pattern" width="15" height="15" patternUnits="userSpaceOnUse">
+                                <rect width="15" height="15" fill="var(--brush)"/>
+                                <path d="M3,12 Q5,8 7,12 M9,10 Q11,6 13,10" stroke="#4a5c2e" stroke-width="1.5" fill="none" opacity="0.6"/>
+                                <circle cx="5" cy="5" r="1" fill="#4a5c2e" opacity="0.4"/>
+                            </pattern>
+                        `;
+                    }
+                    return `
+                        <polygon points="${FLAT_HEX_POINTS}" 
+                                fill="url(#brush-pattern)" 
+                                stroke="${showGrid ? '#333' : 'none'}" 
+                                stroke-width="0.5"/>
+                        ${showCenter ? '<circle cx="30" cy="26" r="1" fill="#fff" stroke="#333" stroke-width="0.3"/>' : ''}
+                        ${showCoords ? '<text x="30" y="30" text-anchor="middle" font-size="4" fill="#333">E5</text>' : ''}
+                    `;
+                }
+            },
+            grain: {
+                name: 'Grain',
+                description: 'Agricultural grain fields, seasonal hindrance',
+                render: (svg, showGrid, showCoords, showCenter) => {
+                    if (!svg.querySelector('#grain-pattern')) {
+                        const defs = svg.querySelector('#svgDefs');
+                        defs.innerHTML += `
+                            <pattern id="grain-pattern" width="10" height="20" patternUnits="userSpaceOnUse">
+                                <rect width="10" height="20" fill="var(--grain)"/>
+                                <path d="M2,0 L2,20 M5,0 L5,20 M8,0 L8,20" stroke="#b8960a" stroke-width="0.5"/>
+                                <circle cx="2" cy="5" r="1" fill="#8b7500"/>
+                                <circle cx="5" cy="8" r="1" fill="#8b7500"/>
+                                <circle cx="8" cy="6" r="1" fill="#8b7500"/>
+                            </pattern>
+                        `;
+                    }
+                    return `
+                        <polygon points="${FLAT_HEX_POINTS}" 
+                                fill="url(#grain-pattern)" 
+                                stroke="${showGrid ? '#333' : 'none'}" 
+                                stroke-width="0.5"/>
+                        ${showCenter ? '<circle cx="30" cy="26" r="1" fill="#fff" stroke="#333" stroke-width="0.3"/>' : ''}
+                        ${showCoords ? '<text x="30" y="30" text-anchor="middle" font-size="4" fill="#333">E5</text>' : ''}
+                    `;
+                }
+            },
+            stream: {
+                name: 'Stream',
+                description: 'Narrow water course running through depression',
+                render: (svg, showGrid, showCoords, showCenter) => {
+                    return `
+                        <polygon points="${FLAT_HEX_POINTS}" 
+                                fill="var(--open-ground)" 
+                                stroke="${showGrid ? '#333' : 'none'}" 
+                                stroke-width="0.5"/>
+                        <!-- Stream running NE to SW -->
+                        <path d="M 45,13 Q 30,26 15,39" fill="none" stroke="var(--stream-blue)" stroke-width="4"/>
+                        <path d="M 45,13 Q 30,26 15,39" fill="none" stroke="#87ceeb" stroke-width="2"/>
+                        ${showCenter ? '<circle cx="30" cy="26" r="1" fill="#fff" stroke="#333" stroke-width="0.3"/>' : ''}
+                        ${showCoords ? '<text x="30" y="30" text-anchor="middle" font-size="4" fill="#333">E5</text>' : ''}
+                    `;
+                }
+            },
+            pond: {
+                name: 'Pond',
+                description: 'Small body of water',
+                render: (svg, showGrid, showCoords, showCenter) => {
+                    return `
+                        <polygon points="${FLAT_HEX_POINTS}" 
+                                fill="var(--water-blue)" 
+                                stroke="${showGrid ? '#333' : 'none'}" 
+                                stroke-width="0.5"/>
+                        <!-- Water ripples -->
+                        <ellipse cx="30" cy="26" rx="20" ry="15" fill="none" stroke="var(--water-shallow)" stroke-width="0.5" opacity="0.5"/>
+                        <ellipse cx="30" cy="26" rx="12" ry="8" fill="none" stroke="var(--water-shallow)" stroke-width="0.5" opacity="0.3"/>
+                        ${showCenter ? '<circle cx="30" cy="26" r="1" fill="#fff" stroke="#333" stroke-width="0.3"/>' : ''}
+                        ${showCoords ? '<text x="30" y="30" text-anchor="middle" font-size="4" fill="#fff">E5</text>' : ''}
+                    `;
+                }
+            },
+            rubble: {
+                name: 'Rubble',
+                description: 'Destroyed building debris providing cover and hindrance',
+                render: (svg, showGrid, showCoords, showCenter) => {
+                    if (!svg.querySelector('#rubble-pattern')) {
+                        const defs = svg.querySelector('#svgDefs');
+                        defs.innerHTML += `
+                            <pattern id="rubble-pattern" width="12" height="12" patternUnits="userSpaceOnUse">
+                                <rect width="12" height="12" fill="var(--rubble)"/>
+                                <rect x="1" y="1" width="4" height="3" fill="#7a6651" transform="rotate(15 3 2.5)"/>
+                                <rect x="7" y="2" width="3" height="4" fill="#8b7d6b" transform="rotate(-20 8.5 4)"/>
+                                <rect x="2" y="7" width="5" height="2" fill="#6b5d4f" transform="rotate(25 4.5 8)"/>
+                                <rect x="8" y="8" width="2" height="3" fill="#5c5248"/>
+                            </pattern>
+                        `;
+                    }
+                    return `
+                        <polygon points="${FLAT_HEX_POINTS}" 
+                                fill="url(#rubble-pattern)" 
+                                stroke="${showGrid ? '#333' : 'none'}" 
+                                stroke-width="0.5"/>
+                        ${showCenter ? '<circle cx="30" cy="26" r="1" fill="#fff" stroke="#333" stroke-width="0.3"/>' : ''}
+                        ${showCoords ? '<text x="30" y="30" text-anchor="middle" font-size="4" fill="#333">E5</text>' : ''}
+                    `;
+                }
+            },
+            'building-wooden-1': {
+                name: 'Wooden Building (1 Level)',
+                description: 'Single-story wooden building on open ground',
+                render: (svg, showGrid, showCoords, showCenter) => {
+                    return `
+                        <!-- Base terrain (open ground) -->
+                        <polygon points="${FLAT_HEX_POINTS}" 
+                                fill="var(--open-ground)" 
+                                stroke="${showGrid ? '#333' : 'none'}" 
+                                stroke-width="0.5"/>
+                        <!-- Building footprint -->
+                        <rect x="15" y="16" width="30" height="20" fill="var(--building-wood)" stroke="#333" stroke-width="0.5"/>
+                        <!-- Wood grain pattern -->
+                        <line x1="15" y1="20" x2="45" y2="20" stroke="var(--building-wood-dark)" stroke-width="0.3"/>
+                        <line x1="15" y1="26" x2="45" y2="26" stroke="var(--building-wood-dark)" stroke-width="0.3"/>
+                        <line x1="15" y1="32" x2="45" y2="32" stroke="var(--building-wood-dark)" stroke-width="0.3"/>
+                        <!-- Level indicator -->
+                        <text x="30" y="27" text-anchor="middle" font-size="6" font-weight="bold" fill="#fff">1</text>
+                        ${showCenter ? '<circle cx="30" cy="26" r="1" fill="#fff" stroke="#333" stroke-width="0.3"/>' : ''}
+                        ${showCoords ? '<text x="30" y="44" text-anchor="middle" font-size="4" fill="#333">E5</text>' : ''}
+                    `;
+                }
+            },
+            'building-stone-2': {
+                name: 'Stone Building (2 Levels)',
+                description: 'Two-story stone building on open ground',
+                render: (svg, showGrid, showCoords, showCenter) => {
+                    return `
+                        <!-- Base terrain (open ground) -->
+                        <polygon points="${FLAT_HEX_POINTS}" 
+                                fill="var(--open-ground)" 
+                                stroke="${showGrid ? '#333' : 'none'}" 
+                                stroke-width="0.5"/>
+                        <!-- Building shadow/3D effect -->
+                        <rect x="17" y="18" width="30" height="20" fill="#5c5248" opacity="0.5"/>
+                        <!-- Building footprint -->
+                        <rect x="13" y="14" width="30" height="20" fill="var(--building-stone)" stroke="#333" stroke-width="0.5"/>
+                        <!-- Stone pattern -->
+                        <line x1="13" y1="20" x2="43" y2="20" stroke="var(--building-stone-dark)" stroke-width="0.5"/>
+                        <line x1="13" y1="26" x2="43" y2="26" stroke="var(--building-stone-dark)" stroke-width="0.5"/>
+                        <!-- Level indicator -->
+                        <rect x="25" y="22" width="10" height="8" fill="#fff" stroke="#333" stroke-width="0.3"/>
+                        <text x="30" y="28" text-anchor="middle" font-size="6" font-weight="bold" fill="#333">2</text>
+                        ${showCenter ? '<circle cx="30" cy="26" r="1" fill="red" stroke="#333" stroke-width="0.3"/>' : ''}
+                        ${showCoords ? '<text x="30" y="44" text-anchor="middle" font-size="4" fill="#333">E5</text>' : ''}
+                    `;
+                }
+            },
+            // Default handler for unimplemented terrain types
+            default: {
+                render: (svg, showGrid, showCoords, showCenter, name) => {
+                    return `
+                        <polygon points="${FLAT_HEX_POINTS}" 
+                                fill="#e0e0e0" 
+                                stroke="${showGrid ? '#333' : 'none'}" 
+                                stroke-width="0.5"/>
+                        <text x="30" y="24" text-anchor="middle" font-size="5" fill="#666">${name}</text>
+                        <text x="30" y="30" text-anchor="middle" font-size="3" fill="#999">(Not implemented)</text>
+                        ${showCenter ? '<circle cx="30" cy="26" r="1" fill="#fff" stroke="#333" stroke-width="0.3"/>' : ''}
+                        ${showCoords ? '<text x="30" y="36" text-anchor="middle" font-size="4" fill="#333">E5</text>' : ''}
+                    `;
+                }
+            }
+        };
+
+        // Render terrain function
+        function renderTerrain(terrainType) {
+            const svg = document.getElementById('hexSvg');
+            const content = document.getElementById('hexContent');
+            const terrain = terrainTypes[terrainType] || terrainTypes.default;
+            
+            // Get current control states
+            const showGrid = document.getElementById('showGrid').checked;
+            const showCoords = document.getElementById('showCoords').checked;
+            const showCenter = document.getElementById('showCenter').checked;
+            
+            // Render the terrain
+            content.innerHTML = terrain.render(svg, showGrid, showCoords, showCenter, terrainType);
+            
+            // Update header
+            document.getElementById('terrainName').textContent = terrain.name || terrainType;
+            document.getElementById('terrainDescription').textContent = terrain.description || 'Custom terrain type';
+        }
+
+        // Event listeners
+        document.addEventListener('DOMContentLoaded', () => {
+            // Terrain item click handlers
+            document.querySelectorAll('.terrain-item').forEach(item => {
+                item.addEventListener('click', (e) => {
+                    // Update active state
+                    document.querySelectorAll('.terrain-item').forEach(el => el.classList.remove('active'));
+                    item.classList.add('active');
+                    
+                    // Render the terrain
+                    const terrainType = item.getAttribute('data-terrain');
+                    renderTerrain(terrainType);
+                });
+            });
+            
+            // Control change handlers
+            ['showGrid', 'showCoords', 'showCenter'].forEach(id => {
+                document.getElementById(id).addEventListener('change', () => {
+                    // Re-render current terrain with new settings
+                    const activeItem = document.querySelector('.terrain-item.active');
+                    if (activeItem) {
+                        renderTerrain(activeItem.getAttribute('data-terrain'));
+                    }
+                });
+            });
+        });
+    </script>
+</body>
+</html>

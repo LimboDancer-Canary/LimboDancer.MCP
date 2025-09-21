@@ -358,7 +358,7 @@ The battlefield is ready. Let the game begin.
 
 ---
 
-# Appendix: Complete Schema Reference
+# Appendix A: Complete Schema Reference
 
 ## Introduction
 
@@ -1374,3 +1374,632 @@ These schemas form a complete technical specification for implementing ASL's ter
 The three-tier architecture with property inheritance creates a flexible system that captures ASL's complexity while remaining maintainable and extensible. The linear traversal system handles unique features like roads and streams that cross through hexes, while the comprehensive property definitions capture every terrain aspect that affects gameplay.
 
 This appendix provides all technical details needed to implement the system in ASP.NET Core 9 with Blazor Server, ensuring perfect fidelity to ASL's game mechanics.
+
+---
+
+# Appendix B: Complete ASL Terrain Reference
+
+## ASL Terrain Types - Official Order of Presentation
+
+This appendix contains all 37 terrain types as specified in the ASL Rulebook Chapter B. Each terrain type includes its official designation, key properties, and implementation details for our terrain system.
+
+### Terrain Type Index
+
+1. **Open Ground**
+   - Base terrain: `openGround`
+   - LOS: No obstacle/hindrance
+   - TEM: -1 (FFMO applies)
+   - Movement: 1 MF infantry, variable vehicle
+   - Special: Subject to FFMO unless Height Advantage
+
+2. **Shellholes**
+   - Base terrain: `shellholes`
+   - LOS: No obstacle
+   - TEM: +1 (if entered at 2 MF)
+   - Movement: 1-2 MF infantry
+   - Special: Treated as Open Ground if entered at 1 MF
+
+3. **Roads**
+   - Linear feature: `road` (paved/dirt subtypes)
+   - LOS: No effect
+   - TEM: DOT (depends on other terrain)
+   - Movement: 1 MF along road, ½ MP vehicles
+   - Special: FFMO applies if using road movement rate
+
+4. **Sunken Road**
+   - Linear feature: `road` with `sunken` elevation
+   - LOS: Depression
+   - TEM: -1 (FFMO)
+   - Movement: 2 MF entry
+   - Special: Provides crest status
+
+5. **Elevated Road**
+   - Linear feature: `road` with `elevated` elevation
+   - LOS: Level One elevation
+   - TEM: -1 (FFMO)
+   - Movement: 2 MF entry
+   - Special: Height Advantage may negate FFMO
+
+6. **Bridges**
+   - Intersection type: `bridge`
+   - LOS: Hindrance
+   - TEM: -1/+1 (depends on LOS direction)
+   - Movement: Use road rate
+   - Special: Can be destroyed, capacity limits
+
+7. **Runways**
+   - Base terrain: `runway`
+   - LOS: No effect
+   - TEM: -1 (in any Fire Phase)
+   - Movement: 1 MF infantry
+   - Special: TEM NA vs armor
+
+8. **Sewers & Tunnels**
+   - Special overlay: `sewer`
+   - LOS: Only to adjacent sewer hex
+   - TEM: -2 or NA
+   - Movement: ALL MF
+   - Special: Underground movement system
+
+9. **Walls & Hedges**
+   - Hexside feature: `wall`, `hedge`, `bocage`
+   - LOS: Half-level (wall/hedge) or Level One (bocage)
+   - TEM: +2 (wall), +1 (hedge), +2/+1 (bocage)
+   - Movement: 1 + COT
+   - Special: Includes variants (hillside, cactus)
+
+10. **Hills**
+    - Defined by: `elevation` property (1-4)
+    - LOS: Creates blind hexes
+    - TEM: +1 Height Advantage (if no other TEM)
+    - Movement: Double MF if ascending
+    - Special: Crest lines affect combat
+
+11. **Cliffs**
+    - Hexside feature: `cliff`
+    - LOS: Blocks completely
+    - TEM: -2 vs climber
+    - Movement: CLIMB only
+    - Special: Requires climbing checks
+
+12. **Brush**
+    - Base terrain: `brush`
+    - LOS: Hindrance
+    - TEM: 0
+    - Movement: 2 MF infantry
+    - Special: Becomes Open Ground in Deep Snow
+
+13. **Woods**
+    - Base terrain: `woods`
+    - LOS: Level One obstacle
+    - TEM: +1 / -1 (Air Bursts)
+    - Movement: 2 MF, vehicles bog
+    - Special: Pine woods variant
+
+14. **Orchard**
+    - Base terrain: `orchard`
+    - LOS: Level One (Apr-Oct) or Hindrance
+    - TEM: 0
+    - Movement: 1 MF
+    - Special: Seasonal, includes Cactus Patch, Olive Grove
+
+15. **Grain**
+    - Base terrain: `grain`
+    - LOS: Hindrance (Jun-Sep)
+    - TEM: 0
+    - Movement: 1½ MF (Apr-Sep)
+    - Special: Highly seasonal
+
+16. **Marsh**
+    - Base terrain: `marsh`
+    - LOS: Hindrance to same level
+    - TEM: 0 (HE FP halved)
+    - Movement: ALL MF, vehicles prohibited
+    - Special: Includes Mudflat variant
+
+17. **Crag**
+    - Base terrain: `crag`
+    - LOS: Not an obstacle
+    - TEM: +1
+    - Movement: 2 MF infantry
+    - Special: No fortifications allowed
+
+18. **Graveyard**
+    - Base terrain: `graveyard`
+    - LOS: Not an obstacle
+    - TEM: +1
+    - Movement: 1 MF
+    - Special: Wall/hedge hexsides
+
+19. **Gullies**
+    - Base terrain: `gully`
+    - LOS: Depression (two-level)
+    - TEM: -1 (Crest) / 0 (in gully)
+    - Movement: 2 MF + COT
+    - Special: Complex crest rules
+
+20. **Streams & Crest Status**
+    - Base terrain/Linear: `stream`
+    - LOS: Depression
+    - TEM: -1 (Crest)
+    - Movement: Varies by depth
+    - Special: Shallow/Deep/Flooded states
+
+21. **Water Obstacles**
+    - Base terrain: `river`, `canal`, `pond`, `lake`, `ocean`
+    - LOS: No effect
+    - TEM: -1
+    - Movement: Prohibited (except boats/swimming)
+    - Special: Freezing possible
+
+22. **Valley**
+    - Base terrain: `valley`
+    - LOS: Two-level depression
+    - TEM: -1 unless entrenched
+    - Movement: Standard
+    - Special: Rare terrain type
+
+23. **Buildings**
+    - Building property: `wooden`, `stone`, etc.
+    - LOS: Obstacle (height = levels)
+    - TEM: +1 wooden, +2 stone, +3 stone ground
+    - Movement: 2 MF
+    - Special: Multi-hex, factories, marketplaces
+
+24. **Rubble**
+    - Base terrain: `rubble`
+    - LOS: Hindrance
+    - TEM: +1
+    - Movement: 2 MF + COT
+    - Special: From destroyed buildings
+
+25. **Fire**
+    - Hex condition: `fire` (smoke/flame/blaze)
+    - LOS: Hindrance/Obstacle
+    - TEM: NA
+    - Movement: Prohibited in Blaze
+    - Special: Spreads via kindling numbers
+
+26. **Wire**
+    - Fortification: `wire`
+    - LOS: No effect
+    - TEM: 0
+    - Movement: +1 MF
+    - Special: Can be breached
+
+27. **Entrenchments**
+    - Fortification: `entrenchment`
+    - LOS: No effect
+    - TEM: +2 to +4
+    - Movement: 1 MF to enter
+    - Special: Foxholes, trenches
+
+28. **Minefields**
+    - Hidden overlay: `minefield`
+    - LOS: No effect
+    - TEM: NA
+    - Movement: Attack triggered
+    - Special: Various types (AP, AT)
+
+29. **Roadblocks**
+    - Fortification: `roadblock`
+    - LOS: Hindrance
+    - TEM: +1
+    - Movement: Blocks vehicles
+    - Special: Placed on roads
+
+30. **Pillboxes**
+    - Fortification: `pillbox`
+    - LOS: Obstacle
+    - TEM: +3 to +5
+    - Movement: Via entrance only
+    - Special: Multiple CA types
+
+31. **Village Terrain**
+    - Area designation: `villageTerrain`
+    - LOS: Per component terrain
+    - TEM: Per component terrain
+    - Movement: Per component terrain
+    - Special: Combines multiple terrain types
+
+32. **Railroads**
+    - Linear feature: `railroad`
+    - LOS: Embanked = hindrance
+    - TEM: +1 if embanked
+    - Movement: 1 MF along RR
+    - Special: RR crossing rules
+
+33. **Stream-Hex Terrain**
+    - Hex terrain: Combined types
+    - LOS: Per dominant terrain
+    - TEM: Per dominant terrain
+    - Movement: Per dominant terrain
+    - Special: Fordable in places
+
+34. **Towers**
+    - Building subtype: `tower`
+    - LOS: High vantage point
+    - TEM: Variable
+    - Movement: Stairwell required
+    - Special: Extended LOS range
+
+35. **Light Woods**
+    - Base terrain: `lightWoods`
+    - LOS: Hindrance only
+    - TEM: +1
+    - Movement: 1.5 MF
+    - Special: Seasonal effects
+
+36. **Prepared Fire Zone**
+    - Overlay designation: `preparedFireZone`
+    - LOS: Cleared
+    - TEM: -1
+    - Movement: As Open Ground
+    - Special: Scenario specific
+
+37. **Debris**
+    - Base terrain: `debris`
+    - LOS: Hindrance
+    - TEM: 0
+    - Movement: +1 MF/MP
+    - Special: From destruction
+
+## Implementation Notes
+
+### Schema Coverage
+Our current schema fully supports:
+- All base terrain types through the `baseTerrain` enum
+- Linear features (roads, streams, RR) via `linearTraversals`
+- Hexside features (walls, hedges, cliffs) via `hexsides`
+- Buildings through the `building` property
+- Fortifications through the `fortifications` array
+- Overlays and conditions through respective properties
+
+### Key Design Decisions
+1. **Terrain Precedence**: When multiple terrain types exist in a hex, the dominant type determines base properties
+2. **Linear Features**: Roads, streams, and railroads use the traversal system to track entry/exit hexsides
+3. **Elevation**: Stored as integer levels, with special handling for depressions and crest status
+4. **Seasonal Effects**: Handled through the `seasonal` property for grain, orchards, and streams
+5. **Combat Modifiers**: TEM and hindrance values pre-computed and stored
+
+### ASL Rules Integration
+Each terrain type references specific ASL rule sections:
+- Open Ground: B1
+- Shellholes: B2
+- Roads: B3
+- Buildings: B23
+- And so forth...
+
+This allows direct correlation between our implementation and the official rules, ensuring accuracy and enabling rule lookups during gameplay.  
+  
+  
+---
+
+# Appendix C: Building Terrain Type - Schema and Design Implications
+
+## Critical Design Principle: Buildings Are NOT Base Terrain
+
+### ASL Rule B.1 SYMBOLOGY
+*"In some cases a hex will contain more than one terrain type with neither dominant over the other, in which case the terrain effects of both types are cumulative."*
+
+The rulebook explicitly states that **"2I9 is a combination building-woods hex"**, confirming that buildings exist **on top of** other terrain types rather than replacing them.
+
+## Building Schema Design
+
+### Core Building Properties
+
+```json
+{
+  "buildingProperties": {
+    "type": "object",
+    "properties": {
+      "type": {
+        "type": "string",
+        "enum": ["wooden", "stone", "factory", "marketplace", "rowhouse", "church"],
+        "description": "Building construction type affects TEM and special rules"
+      },
+      "levels": {
+        "type": "integer",
+        "minimum": 1,
+        "maximum": 4,
+        "description": "Number of building levels (floors)"
+      },
+      "currentLevels": {
+        "type": "integer",
+        "description": "Actual levels after damage/rubble"
+      },
+      "hasStairwell": {
+        "type": "boolean",
+        "description": "Inherent stairwell if no printed stairwells"
+      },
+      "stairwells": {
+        "type": "array",
+        "description": "Printed stairwell positions for multi-level access",
+        "items": {
+          "type": "object",
+          "properties": {
+            "id": {"type": "string"},
+            "position": {
+              "type": "object",
+              "properties": {
+                "x": {"type": "number", "description": "Relative X (0-1)"},
+                "y": {"type": "number", "description": "Relative Y (0-1)"}
+              }
+            },
+            "accessibleLevels": {
+              "type": "array",
+              "items": {"type": "integer"},
+              "description": "Which levels this stairwell connects"
+            }
+          }
+        }
+      },
+      "hasCellar": {
+        "type": "boolean",
+        "default": true,
+        "description": "Per B23.41 - AFVs can fall through"
+      },
+      "rooftop": {
+        "type": "boolean",
+        "default": false,
+        "description": "Per B23.8 - Only by SSR, no TEM"
+      },
+      "fortified": {
+        "type": "boolean",
+        "default": false,
+        "description": "Per B23.9 - +1 additional TEM"
+      },
+      "internalWalls": {
+        "type": "array",
+        "description": "For rowhouses - black bars between sections",
+        "items": {
+          "type": "object",
+          "properties": {
+            "hexside": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 5
+            },
+            "breachable": {
+              "type": "boolean",
+              "default": true
+            },
+            "breached": {
+              "type": "boolean",
+              "default": false,
+              "description": "Has this wall been breached by DC?"
+            }
+          }
+        }
+      },
+      "connections": {
+        "type": "array",
+        "description": "Multi-hex building connections",
+        "items": {
+          "type": "object",
+          "required": ["hexside", "toHex"],
+          "properties": {
+            "hexside": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 5,
+              "description": "Which hexside has the connection"
+            },
+            "toHex": {
+              "type": "string",
+              "description": "Adjacent hex coordinate (e.g., 'K5')"
+            },
+            "connectionType": {
+              "type": "string",
+              "enum": ["wall", "passage", "covered", "open"],
+              "description": "Type of building connection"
+            },
+            "width": {
+              "type": "number",
+              "description": "Width as fraction of hexside (0-1)",
+              "default": 0.5
+            },
+            "offset": {
+              "type": "number",
+              "description": "Position along hexside (0-1)",
+              "default": 0.5
+            }
+          }
+        }
+      },
+      "multiHexId": {
+        "type": "string",
+        "description": "Shared ID for all hexes of the same building"
+      }
+    }
+  }
+}
+```
+
+## Building Type Specifications
+
+### 1. **Standard Buildings**
+
+#### Wooden Buildings (Brown)
+- **TEM**: +2
+- **Fire**: Kindle on DR ≥ 7, Spread on DR ≥ 8
+- **Levels**: 1-2 typical
+- **Visual**: Brown color (#8b6914)
+
+#### Stone Buildings (Gray)
+- **TEM**: +3 (ground level), +4 (upper levels vs Indirect Fire)
+- **Fire**: Kindle on DR ≥ 8, Spread on DR ≥ 9
+- **Levels**: 1-4 possible
+- **Visual**: Gray color (#8b7d6b)
+
+### 2. **Special Building Types**
+
+#### Factory (B23.74)
+- **Height**: 1½ levels (no stairwell) or 2½ levels (with stairwell)
+- **Occupancy**: All units at ground level only
+- **LOS**: Special rules - hindrance within building
+- **TEM**: +3 normal, +1 when firing through same building
+- **Movement**: 1 MF between Factory hexes
+- **Special Features**:
+  - Vehicular-sized entrances (stairwell hexes)
+  - No cellars
+  - Rooftop access points
+
+#### Marketplace (B23.73)
+- **Ground Level**: No obstacle (open ground)
+- **Upper Level**: Overhang configuration
+- **Access**: External staircase only
+- **Special**: Units can move through ground level as Open Ground
+
+#### Rowhouse (B23.71)
+- **Walls**: Black bars block LOS between sections
+- **Movement**: Special bypass rules at ground level (3 MF)
+- **Breach**: Can breach walls with DC
+- **Heights**: Can have variable heights (1 and 2 levels)
+- **Control**: Each section counts as separate building for rout
+
+#### Church
+- **Steeple**: Special LOS vantage point
+- **Construction**: Usually stone
+- **Special**: Often SSR-defined features
+
+### 3. **Building Features by Level**
+
+#### Ground Level
+- Normal building TEM applies
+- Entry cost: 2 MF
+- May contain cellars (AFV bog/fall risk)
+- Fortification possible (+1 TEM)
+
+#### Upper Levels (1-3)
+- Accessed via stairwells (1 MF between levels)
+- +1 TEM vs Indirect Fire per level above ground
+- Multi-hex buildings connect at same level
+
+#### Rooftops (B23.8)
+- Only exist by SSR
+- No building TEM (treated as Open Ground)
+- +1 Height Advantage only
+- Cannot be fortified
+- All multi-level buildings have inherent rooftop access
+
+## Hex Design Implications
+
+### Visual Layering
+```svg
+<!-- Example: Woods hex with Stone Building -->
+<g id="hex-2I9">
+  <!-- Layer 1: Base terrain -->
+  <polygon points="..." fill="url(#woods-pattern)"/>
+  
+  <!-- Layer 2: Building footprint -->
+  <rect x="18" y="16" width="24" height="20" 
+        fill="#8b7d6b" stroke="#5c5248" opacity="0.9"/>
+  
+  <!-- Layer 3: Building features -->
+  <circle cx="30" cy="26" r="1.5" fill="white" 
+          stroke="black" stroke-width="0.3"/> <!-- Stairwell -->
+  
+  <!-- Layer 4: Level indicator (optional) -->
+  <text x="38" y="20" font-size="3" fill="#fff">2</text>
+</g>
+```
+
+### Multi-Hex Building Connections
+```svg
+<!-- Building segment with connection indicator -->
+<g id="building-segment">
+  <!-- Main building area -->
+  <rect x="15" y="16" width="30" height="20" fill="#8b7d6b"/>
+  
+  <!-- Connection extension to hex edge -->
+  <rect x="45" y="18" width="15" height="16" 
+        fill="#8b7d6b" stroke="none"/>
+  
+  <!-- Visual indicator of connection -->
+  <line x1="45" y1="18" x2="45" y2="34" 
+        stroke="#5c5248" stroke-width="0.5" stroke-dasharray="2,1"/>
+</g>
+```
+
+### Rowhouse Black Bars
+```svg
+<!-- Rowhouse with internal walls -->
+<g id="rowhouse">
+  <!-- Building sections -->
+  <rect x="15" y="16" width="30" height="20" fill="#8b7d6b"/>
+  
+  <!-- Black bar (internal wall) -->
+  <line x1="30" y1="16" x2="30" y2="36" 
+        stroke="black" stroke-width="2"/>
+  
+  <!-- Breach indicator (if breached) -->
+  <circle cx="30" cy="26" r="3" fill="white" stroke="red" 
+          stroke-width="1" opacity="0.8"/>
+</g>
+```
+
+## Implementation Guidelines
+
+### 1. **Terrain Combination Logic**
+- Buildings modify but don't replace base terrain
+- Movement costs use higher of building (2 MF) or terrain
+- TEM uses building value
+- Special terrain effects may still apply (e.g., bog in marsh)
+
+### 2. **Stairwell Representation**
+- White circle/square symbol within building
+- Position indicates access point
+- Multiple stairwells possible in large buildings
+- Factory stairwells indicate vehicular entrances
+
+### 3. **Multi-Hex Building Rules**
+- All segments share same `multiHexId`
+- Connections must be reciprocal between hexes
+- Building control requires controlling majority of hexes
+- Rubbling affects only specific hexes unless specified
+
+### 4. **Visual Hierarchy**
+1. Base terrain visible at edges/gaps
+2. Building footprint (semi-transparent or with gaps)
+3. Building type indicators (color, pattern)
+4. Feature symbols (stairwells, level numbers)
+5. Connection indicators at hex edges
+
+## Common Building Configurations
+
+### Village Center
+- Multiple connected stone buildings
+- Central marketplace (potentially)
+- Various building heights (1-2 levels)
+- Roads between buildings
+
+### Factory Complex
+- Large multi-hex factory
+- All hexes at same height
+- Multiple vehicular entrances
+- Potential railroad connections
+
+### Rowhouse Block
+- Linear arrangement
+- Black bars between sections
+- Consistent height along block
+- Limited access points
+
+### Fortified Position
+- Stone buildings with fortification
+- Strategic stairwell placement
+- Commanding height (2+ levels)
+- Limited approaches
+
+## Rules References
+- Building basics: B23
+- Cellars: B23.41
+- Rooftops: B23.8
+- Fortified Buildings: B23.9
+- Factory: B23.74
+- Marketplace: B23.73
+- Rowhouse: B23.71
+- Multi-hex buildings: B23.721-722
+
+This comprehensive reference ensures accurate implementation of ASL's complex building rules within our terrain system.

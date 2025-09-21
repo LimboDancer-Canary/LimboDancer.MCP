@@ -1,0 +1,1052 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>ASL Hex Map Generator</title>
+  <style>
+    body { font-family: Arial, sans-serif; margin:0; padding:20px; background:#f0f0f0; }
+    .container { display:flex; gap:20px; max-width:1400px; margin:0 auto; }
+    .controls { background:#fff; padding:20px; border-radius:8px; box-shadow:0 2px 4px rgba(0,0,0,.1); width:340px; max-height:80vh; overflow-y:auto; }
+    .map-container { background:#fff; padding:20px; border-radius:8px; box-shadow:0 2px 4px rgba(0,0,0,.1); flex:1; }
+    h2,h3 { margin-top:0; }
+    .control-group { margin-bottom:18px; padding-bottom:18px; border-bottom:1px solid #eee; }
+    label { display:block; margin-bottom:6px; font-weight:bold; font-size:14px; }
+    select, input[type="number"] { width:100%; padding:6px; }
+    .selected-hex { background:#e3f2fd; padding:10px; border-radius:6px; margin-bottom:16px; font-weight:bold; text-align:center; }
+    .hex-clickable { cursor:pointer; }
+    .hex-clickable:hover { opacity:.95; }
+    svg { border:1px solid #ddd; }
+
+    /* Wedge picker UI */
+    .feature-row { display:flex; align-items:center; justify-content:space-between; gap:8px; margin:6px 0; }
+    .feature-row .label { font-weight:600; }
+    .wedge-toolbar { display:flex; align-items:flex-start; gap:10px; margin-bottom:8px; }
+    .wedge-actions { display:flex; gap:6px; margin-top:4px; }
+    .mini-btn { font-size:11px; padding:3px 6px; border:1px solid #ccc; border-radius:4px; background:#f7f7f7; cursor:pointer; }
+    .mini-btn:hover { background:#eee; }
+    .wedge-picker { width:64px; height:56px; display:block; }
+    .wedge {
+      /* near-transparent fill so pointer events work cross-browser (incl. Opera) */
+      fill: rgba(0,0,0,0.001);
+      stroke:#9aa0a6; stroke-width:1; cursor:pointer;
+    }
+    .wedge:hover { stroke:#111; }
+    .wedge.selected { stroke:#333; }
+    .wedge-picker[data-tint="woods"]      .wedge.selected { fill:#2e7d32; fill-opacity:.35; }
+    .wedge-picker[data-tint="building"]   .wedge.selected { fill:#8b6f47; fill-opacity:.35; }
+    .wedge-picker[data-tint="brush"]      .wedge.selected { fill:#6b8e23; fill-opacity:.35; }
+    .wedge-picker[data-tint="shellhole"]  .wedge.selected { fill:#6b4f1d; fill-opacity:.35; }
+    .wedge-picker.disabled .wedge { opacity:.4; pointer-events:none; }
+    .wedge-text { display:flex; flex-wrap:wrap; gap:8px; margin:4px 0 10px; }
+    .wedge-text label { font-size:12px; display:flex; align-items:center; gap:4px; }
+  </style>
+</head>
+<body>
+<div class="container">
+  <div class="controls">
+    <h2>Hex Map Editor</h2>
+    <div class="selected-hex" id="selectedHexDisplay">Click a hex to edit</div>
+
+    <div class="control-group">
+      <label>Map Size:</label>
+      <select id="mapSize" onchange="initializeMap(); renderMap();">
+        <option value="single">Single Hex</option>
+        <option value="small">3x3 Map</option>
+        <option value="medium" selected>5x5 Map</option>
+        <option value="large">7x7 Map</option>
+      </select>
+    </div>
+
+    <div id="hexControls" style="display:none;">
+      <div class="control-group">
+        <label>Base Terrain:</label>
+        <select id="baseTerrain" onchange="updateSelectedHex()">
+          <option value="OpenGround">Open Ground</option>
+          <option value="Woods">Woods</option>
+          <option value="Grain">Grain</option>
+          <option value="Marsh">Marsh</option>
+          <option value="Sand">Sand</option>
+          <option value="Scrub">Scrub</option>
+        </select>
+      </div>
+
+      <div class="control-group">
+        <label>Vertex Elevations (Level):</label>
+        <div style="display:grid; grid-template-columns:repeat(3,1fr); gap:6px;">
+          <div><small>East</small><input type="number" id="elev0" value="1" step="0.1" min="0" max="5" onchange="updateSelectedHex()"></div>
+          <div><small>South-East</small><input type="number" id="elev1" value="1" step="0.1" min="0" max="5" onchange="updateSelectedHex()"></div>
+          <div><small>South-West</small><input type="number" id="elev2" value="1" step="0.1" min="0" max="5" onchange="updateSelectedHex()"></div>
+          <div><small>West</small><input type="number" id="elev3" value="1" step="0.1" min="0" max="5" onchange="updateSelectedHex()"></div>
+          <div><small>North-West</small><input type="number" id="elev4" value="1" step="0.1" min="0" max="5" onchange="updateSelectedHex()"></div>
+          <div><small>North-East</small><input type="number" id="elev5" value="1" step="0.1" min="0" max="5" onchange="updateSelectedHex()"></div>
+        </div>
+        <label style="margin-top:6px;">Center Elevation:</label>
+        <input type="number" id="centerElev" value="1" step="0.1" min="0" max="5" onchange="updateSelectedHex()">
+      </div>
+
+      <!-- Terrain Features -->
+      <div class="control-group">
+        <h3>Terrain Features</h3>
+
+        <!-- Woods -->
+        <div class="feature-row">
+          <label class="label" for="hasWoods">Woods</label>
+          <input type="checkbox" id="hasWoods" onchange="onFeatureToggle('woods')">
+        </div>
+        <div class="wedge-toolbar">
+          <div id="picker-woods"></div>
+          <div class="wedge-actions">
+            <button class="mini-btn" onclick="setAllWedges('woods', true)">All</button>
+            <button class="mini-btn" onclick="setAllWedges('woods', false)">None</button>
+          </div>
+        </div>
+        <div id="wedge-text-woods" class="wedge-text"></div>
+
+        <!-- Building -->
+        <div class="feature-row">
+          <label class="label" for="hasBuilding">Building</label>
+          <input type="checkbox" id="hasBuilding" onchange="onFeatureToggle('building')">
+        </div>
+        <div class="wedge-toolbar">
+          <div id="picker-building"></div>
+          <div class="wedge-actions">
+            <button class="mini-btn" onclick="setAllWedges('building', true)">All</button>
+            <button class="mini-btn" onclick="setAllWedges('building', false)">None</button>
+          </div>
+        </div>
+        <div id="wedge-text-building" class="wedge-text"></div>
+
+        <!-- Brush -->
+        <div class="feature-row">
+          <label class="label" for="hasBrush">Brush</label>
+          <input type="checkbox" id="hasBrush" onchange="onFeatureToggle('brush')">
+        </div>
+        <div class="wedge-toolbar">
+          <div id="picker-brush"></div>
+          <div class="wedge-actions">
+            <button class="mini-btn" onclick="setAllWedges('brush', true)">All</button>
+            <button class="mini-btn" onclick="setAllWedges('brush', false)">None</button>
+          </div>
+        </div>
+        <div id="wedge-text-brush" class="wedge-text"></div>
+
+        <!-- Shellhole -->
+        <div class="feature-row">
+          <label class="label" for="hasShellhole">Shellhole</label>
+          <input type="checkbox" id="hasShellhole" onchange="onFeatureToggle('shellhole')">
+        </div>
+        <div class="wedge-toolbar">
+          <div id="picker-shellhole"></div>
+          <div class="wedge-actions">
+            <button class="mini-btn" onclick="setAllWedges('shellhole', true)">All</button>
+            <button class="mini-btn" onclick="setAllWedges('shellhole', false)">None</button>
+          </div>
+        </div>
+        <div id="wedge-text-shellhole" class="wedge-text"></div>
+
+        <!-- Orchard unchanged -->
+        <div class="feature-row" style="margin-top:10px;">
+          <label class="label" for="hasOrchard">Orchard</label>
+          <input type="checkbox" id="hasOrchard" onchange="updateSelectedHex()">
+        </div>
+      </div>
+
+      <!-- Linear Features -->
+      <div class="control-group">
+        <h3>Linear Features</h3>
+        <label>Feature Type:</label>
+        <select id="linearFeatureType" onchange="updateSelectedHex()">
+          <option value="">None</option>
+          <option value="Road">Road</option>
+          <option value="Stream">Stream</option>
+          <option value="Path">Path</option>
+          <option value="Railroad">Railroad</option>
+        </select>
+        <label>Entry Edge:</label>
+        <select id="entryEdge" onchange="updateSelectedHex()">
+          <option value="5">North-East</option>
+          <option value="4">North</option>
+          <option value="3">North-West</option>
+          <option value="2">South-West</option>
+          <option value="1">South</option>
+          <option value="0">South-East</option>
+        </select>
+        <label>Exit Edge:</label>
+        <select id="exitEdge" onchange="updateSelectedHex()">
+          <option value="">Terminates in Hex</option>
+          <option value="5">North-East</option>
+          <option value="4">North</option>
+          <option value="3">North-West</option>
+          <option value="2">South-West</option>
+          <option value="1">South</option>
+          <option value="0">South-East</option>
+        </select>
+      </div>
+
+      <div class="control-group">
+        <h3>Hexside Features</h3>
+        <label>Wall on Edge:</label>
+        <select id="wallEdge" onchange="updateSelectedHex()">
+          <option value="">None</option>
+          <option value="5">North-East</option>
+          <option value="4">North</option>
+          <option value="3">North-West</option>
+          <option value="2">South-West</option>
+          <option value="1">South</option>
+          <option value="0">South-East</option>
+        </select>
+        <label>Hedge on Edge:</label>
+        <select id="hedgeEdge" onchange="updateSelectedHex()">
+          <option value="">None</option>
+          <option value="5">North-East</option>
+          <option value="4">North</option>
+          <option value="3">North-West</option>
+          <option value="2">South-West</option>
+          <option value="1">South</option>
+          <option value="0">South-East</option>
+        </select>
+      </div>
+    </div>
+  </div>
+
+  <div class="map-container">
+    <h2>ASL Hex Map</h2>
+    <div id="mapOutput"></div>
+  </div>
+</div>
+
+<script>
+/* ===== Geometry & constants ===== */
+const HEX_SIZE   = 50;
+const HEX_WIDTH  = 2 * HEX_SIZE;
+const HEX_HEIGHT = Math.sqrt(3) * HEX_SIZE;
+
+const TOP_MARGIN_ROWS = 1;
+const BOTTOM_MARGIN_ROWS = 1;
+const PADDING = 60;
+
+const UI_DIRS = ['N','NE','SE','S','SW','NW'];
+const WEDGE_ORDER = [4,5,0,1,2,3]; // UI order to triangle index mapping
+
+let mapData = {};
+let selectedHex = null;
+
+const TERRAIN_COLORS = {
+  OpenGround:'#faf6e6', Woods:'#e6f2e6', Building:'#f0ebe6', Water:'#e6f0f8',
+  Marsh:'#f0f5f0', Grain:'#faf3e6', Orchard:'#f2f8e6', Brush:'#f0f5f0',
+  Road:'#f5f0eb', Sand:'#fdf5eb', Scrub:'#f8f2eb', Hammada:'#f5ebe6'
+};
+
+function getVertexPosition(i){
+  const angle = (Math.PI/3) * i; // flat-top
+  return { x: HEX_SIZE*Math.cos(angle), y: HEX_SIZE*Math.sin(angle) };
+}
+function getEdgeMidpoint(edgeIndex){
+  const v1=getVertexPosition(edgeIndex), v2=getVertexPosition((edgeIndex+1)%6);
+  return { x:(v1.x+v2.x)/2, y:(v1.y+v2.y)/2 };
+}
+function getHexPoints(){
+  const pts=[]; for(let i=0;i<6;i++){ const v=getVertexPosition(i); pts.push(`${v.x},${v.y}`); }
+  return pts.join(' ');
+}
+function interpolatePoint(p1,p2,t){ return { x:p1.x+(p2.x-p1.x)*t, y:p1.y+(p2.y-p1.y)*t }; }
+
+// Angle of the outward normal for edge (wedge) i, in degrees (SVG y-down)
+function edgeNormalAngle(i){
+  const m = getEdgeMidpoint(i);                 // midpoint of edge i
+  return Math.atan2(m.y, m.x) * 180 / Math.PI;  // center->midpoint
+}
+
+// Simple building glyph centered at (0,0); size is a scale multiplier
+function buildingGlyph(scale=1){
+  const w = 30 * scale, h = 20 * scale;
+  const x = -w/2, y = -h/2;
+  return `
+    <rect x="${x}" y="${y}" width="${w}" height="${h}"
+          fill="#8b7355" stroke="black" stroke-width="1"/>
+    <rect x="${x-2*scale}" y="${y-2*scale}" width="${w}" height="${h}"
+          fill="none" stroke="black" stroke-width="${0.5*scale}"/>
+    <!-- simple roof hint -->
+    <line x1="${x}" y1="${y}" x2="${x+w}" y2="${y}" stroke="#4f3c2a" stroke-width="${1*scale}"/>
+  `;
+}
+
+// Pick a stable-but-varied point inside a triangle, slightly away from the exact center line.
+function sampleBuildingPointInWedge(rng, tri){
+  // barycentric sample
+  let u = rng(), v = rng();
+  if (u + v > 1) { u = 1 - u; v = 1 - v; }
+  let w = 1 - u - v; // weight for p0 (the hex center)
+
+  // Re-weight so it's not always near the ring or center:
+  // choose how much of the "center" we keep, then spread the rest along the edge
+  const centerFactor = randBetween(rng, 0.15, 0.45); // 15–45% weight on center
+  const edgeFactor   = 1 - centerFactor;
+  const sumUV = (u + v) || 1;
+  u = (u / sumUV) * edgeFactor;
+  v = (v / sumUV) * edgeFactor;
+  w = centerFactor;
+
+  return {
+    x: w*tri.p0.x + u*tri.p1.x + v*tri.p2.x,
+    y: w*tri.p0.y + u*tri.p1.y + v*tri.p2.y
+  };
+}
+
+// Orientation: mostly random, only partially biased toward the wedge's outward normal.
+function buildingOrientationDeg(rng, wedgeIndex){
+  const edge = edgeNormalAngle(wedgeIndex);      // outward
+  const rnd  = randBetween(rng, 0, 360);
+  const mix  = randBetween(rng, 0.50, 0.85);     // 50–85% random dominance
+  const base = edge*(1 - mix) + rnd*mix;
+  const jitter = randBetween(rng, -10, 10);      // small finishing jitter
+  return base + jitter;
+}
+
+
+/* ===== Data model ===== */
+function defaultPlacements(){ return [false,false,false,false,false,false]; }
+function ensurePlacements(hexData){
+  if(!hexData.features.placements){
+    hexData.features.placements = {
+      woods: defaultPlacements().slice(),
+      building: defaultPlacements().slice(),
+      brush: defaultPlacements().slice(),
+      shellhole: defaultPlacements().slice()
+    };
+  } else {
+    for(const k of ['woods','building','brush','shellhole']){
+      if(!Array.isArray(hexData.features.placements[k]) || hexData.features.placements[k].length!==6){
+        hexData.features.placements[k] = defaultPlacements().slice();
+      }
+    }
+  }
+}
+function createDefaultHexData(){
+  return {
+    baseTerrain:'OpenGround',
+    elevations:[1,1,1,1,1,1],
+    centerElevation:1,
+    features:{
+      woods:false, building:false, orchard:false, brush:false, shellhole:false,
+      placements:{
+        woods: defaultPlacements().slice(),
+        building: defaultPlacements().slice(),
+        brush: defaultPlacements().slice(),
+        shellhole: defaultPlacements().slice()
+      }
+    },
+    linearFeature:{ type:'', entryEdge:4, exitEdge:'' },
+    hexsideFeatures:{ wall:'', hedge:'' }
+  };
+}
+
+/* ===== Map lifecycle ===== */
+function initializeMap(){
+  mapData={}; selectedHex=null;
+  document.getElementById('selectedHexDisplay').textContent='Click a hex to edit';
+  document.getElementById('hexControls').style.display='none';
+
+  const mapSize=document.getElementById('mapSize').value;
+  let rows, cols;
+  switch(mapSize){
+    case 'single': rows=cols=1; break;
+    case 'small': rows=cols=3; break;
+    case 'medium': rows=cols=5; break;
+    case 'large': rows=cols=7; break;
+  }
+  for(let r=0;r<rows;r++){
+    for(let c=0;c<cols;c++){
+      const coord=`${String.fromCharCode(65+c)}${r+1}`;
+      mapData[coord]=createDefaultHexData();
+    }
+  }
+}
+
+/* ===== Wedge picker UI ===== */
+function buildWedgePickerSVG(idBase, values, tintKey, size=64){
+  const R=size*0.48, Cx=size/2, Cy=size/2;
+  function v(i){ return { x: Cx + R*Math.cos((Math.PI/3)*i), y: Cy + R*Math.sin((Math.PI/3)*i) }; }
+  const tris=[];
+  for(let i=0;i<6;i++){
+    const p1=v(i), p2=v((i+1)%6);
+    tris.push(`${Cx},${Cy} ${p1.x},${p1.y} ${p2.x},${p2.y}`);
+  }
+  let s=`<svg class="wedge-picker" data-tint="${tintKey}" viewBox="0 0 ${size} ${size}" role="group" tabindex="0">`;
+  WEDGE_ORDER.forEach((triIndex, uiIndex)=>{
+    const sel = values[triIndex] ? 'selected':'';
+    s += `<polygon class="wedge ${sel}" id="${idBase}-w${uiIndex}" data-tri="${triIndex}" points="${tris[triIndex]}" aria-checked="${values[triIndex]?'true':'false'}" role="checkbox"><title>${UI_DIRS[uiIndex]}</title></polygon>`;
+  });
+  s+='</svg>'; return s;
+}
+
+function mountWedgePicker(containerId, featureKey, disabled){
+  if(!selectedHex) return;
+  const hexData = mapData[selectedHex];
+  ensurePlacements(hexData);
+  const vals = hexData.features.placements[featureKey];
+
+  const container = document.getElementById(containerId);
+  container.innerHTML = buildWedgePickerSVG(containerId, vals, featureKey, 64);
+  const svg = container.querySelector('svg');
+  if(disabled) svg.classList.add('disabled'); else svg.classList.remove('disabled');
+
+  // polygon click → toggle mask + sync text checkboxes
+  svg.querySelectorAll('.wedge').forEach((el, uiIndex)=>{
+    el.addEventListener('click', ()=>{
+      if(disabled) return;
+      const tri = parseInt(el.dataset.tri,10);
+      vals[tri] = !vals[tri];
+      el.classList.toggle('selected', vals[tri]);
+      el.setAttribute('aria-checked', vals[tri]?'true':'false');
+      const tcb = document.querySelector(`#wedge-text-${featureKey} input[data-ui="${uiIndex}"]`);
+      if(tcb) tcb.checked = vals[tri];
+      renderMap();
+    });
+  });
+
+  // keyboard support
+  let activeUIIndex=0;
+  svg.addEventListener('keydown', e=>{
+    if(disabled) return;
+    if(e.key==='ArrowRight'||e.key==='ArrowDown'){ activeUIIndex=(activeUIIndex+1)%6; e.preventDefault(); }
+    else if(e.key==='ArrowLeft'||e.key==='ArrowUp'){ activeUIIndex=(activeUIIndex+5)%6; e.preventDefault(); }
+    else if(e.key===' '||e.key==='Enter'){
+      const tri = WEDGE_ORDER[activeUIIndex];
+      vals[tri]=!vals[tri];
+      const poly = svg.querySelector(`#${containerId}-w${activeUIIndex}`);
+      if(poly){ poly.classList.toggle('selected', vals[tri]); poly.setAttribute('aria-checked', vals[tri]?'true':'false'); }
+      const tcb = document.querySelector(`#wedge-text-${featureKey} input[data-ui="${activeUIIndex}"]`);
+      if(tcb) tcb.checked = vals[tri];
+      renderMap();
+      e.preventDefault();
+    }
+  });
+
+  // (re)render text checkboxes
+  renderWedgeTextControls(featureKey, disabled);
+}
+
+function renderWedgeTextControls(featureKey, disabled=false){
+  if(!selectedHex) return;
+  const hexData = mapData[selectedHex];
+  ensurePlacements(hexData);
+  const mask = hexData.features.placements[featureKey];
+  const host = document.getElementById(`wedge-text-${featureKey}`);
+  host.innerHTML = UI_DIRS.map((lbl, idx)=>{
+    const tri = WEDGE_ORDER[idx];
+    const checked = mask[tri] ? 'checked':'';
+    const dis = disabled ? 'disabled':'';
+    return `<label><input type="checkbox" class="wedge-tcb" data-feature="${featureKey}" data-ui="${idx}" ${checked} ${dis}> ${lbl}</label>`;
+  }).join('');
+
+  host.querySelectorAll('.wedge-tcb').forEach(cb=>{
+    cb.addEventListener('change', ()=>{
+      const uiIndex = parseInt(cb.dataset.ui,10);
+      const tri = WEDGE_ORDER[uiIndex];
+      mask[tri] = cb.checked;
+
+      // sync polygon
+      const poly = document.querySelector(`#picker-${featureKey} svg #picker-${featureKey}-w${uiIndex}`);
+      if(poly){ poly.classList.toggle('selected', cb.checked); poly.setAttribute('aria-checked', cb.checked?'true':'false'); }
+      renderMap();
+    });
+  });
+}
+
+function setAllWedges(featureKey, value){
+  if(!selectedHex) return;
+  const hexData = mapData[selectedHex];
+  ensurePlacements(hexData);
+  hexData.features.placements[featureKey] = [value,value,value,value,value,value];
+  mountWedgePicker(`picker-${featureKey}`, featureKey, !hexData.features[featureKey]);
+  renderWedgeTextControls(featureKey, !hexData.features[featureKey]);
+  renderMap();
+}
+
+/* ===== UI wiring ===== */
+function selectHex(coord){
+  selectedHex = coord;
+  const hexData = mapData[coord];
+  ensurePlacements(hexData);
+
+  document.getElementById('selectedHexDisplay').textContent = `Editing Hex: ${coord}`;
+  document.getElementById('hexControls').style.display='block';
+
+  document.getElementById('baseTerrain').value = hexData.baseTerrain;
+  for(let i=0;i<6;i++) document.getElementById(`elev${i}`).value = hexData.elevations[i];
+  document.getElementById('centerElev').value = hexData.centerElevation;
+
+  document.getElementById('hasWoods').checked = hexData.features.woods;
+  document.getElementById('hasBuilding').checked = hexData.features.building;
+  document.getElementById('hasOrchard').checked = hexData.features.orchard;
+  document.getElementById('hasBrush').checked = hexData.features.brush;
+  document.getElementById('hasShellhole').checked = hexData.features.shellhole;
+
+  mountWedgePicker('picker-woods','woods',!hexData.features.woods);
+  mountWedgePicker('picker-building','building',!hexData.features.building);
+  mountWedgePicker('picker-brush','brush',!hexData.features.brush);
+  mountWedgePicker('picker-shellhole','shellhole',!hexData.features.shellhole);
+
+  document.getElementById('linearFeatureType').value = hexData.linearFeature.type;
+  document.getElementById('entryEdge').value = hexData.linearFeature.entryEdge;
+  document.getElementById('exitEdge').value = hexData.linearFeature.exitEdge;
+  document.getElementById('wallEdge').value = hexData.hexsideFeatures.wall;
+  document.getElementById('hedgeEdge').value = hexData.hexsideFeatures.hedge;
+
+  renderMap();
+}
+
+function onFeatureToggle(featureKey){
+  if(!selectedHex) return;
+  const hexData = mapData[selectedHex];
+  hexData.features[featureKey] = document.getElementById(`has${featureKey.charAt(0).toUpperCase()+featureKey.slice(1)}`).checked;
+  ensurePlacements(hexData);
+  mountWedgePicker(`picker-${featureKey}`, featureKey, !hexData.features[featureKey]);
+  renderWedgeTextControls(featureKey, !hexData.features[featureKey]);
+  renderMap();
+}
+
+function updateSelectedHex(){
+  if(!selectedHex) return;
+  const hexData = mapData[selectedHex];
+
+  hexData.baseTerrain = document.getElementById('baseTerrain').value;
+  for(let i=0;i<6;i++) hexData.elevations[i] = parseFloat(document.getElementById(`elev${i}`).value);
+  hexData.centerElevation = parseFloat(document.getElementById('centerElev').value);
+
+  hexData.features.woods = document.getElementById('hasWoods').checked;
+  hexData.features.building = document.getElementById('hasBuilding').checked;
+  hexData.features.orchard = document.getElementById('hasOrchard').checked;
+  hexData.features.brush = document.getElementById('hasBrush').checked;
+  hexData.features.shellhole = document.getElementById('hasShellhole').checked;
+
+  hexData.linearFeature.type = document.getElementById('linearFeatureType').value;
+  hexData.linearFeature.entryEdge = parseInt(document.getElementById('entryEdge').value);
+  hexData.linearFeature.exitEdge = document.getElementById('exitEdge').value;
+
+  hexData.hexsideFeatures.wall = document.getElementById('wallEdge').value;
+  hexData.hexsideFeatures.hedge = document.getElementById('hedgeEdge').value;
+
+  mountWedgePicker('picker-woods','woods',!hexData.features.woods);
+  mountWedgePicker('picker-building','building',!hexData.features.building);
+  mountWedgePicker('picker-brush','brush',!hexData.features.brush);
+  mountWedgePicker('picker-shellhole','shellhole',!hexData.features.shellhole);
+
+  renderMap();
+}
+
+/* ===== Pattern defs (from v35) ===== */
+function createPatternDefs(){
+  return `
+  <defs>
+    <pattern id="woodsPattern" x="0" y="0" width="20" height="20" patternUnits="userSpaceOnUse">
+      <circle cx="5" cy="5" r="3" fill="#2d5016" opacity="0.8"/>
+      <circle cx="5" cy="3" r="2" fill="#3d6b20" opacity="0.8"/>
+      <circle cx="15" cy="12" r="3" fill="#2d5016" opacity="0.8"/>
+      <circle cx="15" cy="10" r="2" fill="#3d6b20" opacity="0.8"/>
+      <circle cx="8" cy="18" r="3" fill="#2d5016" opacity="0.8"/>
+      <circle cx="8" cy="16" r="2" fill="#3d6b20" opacity="0.8"/>
+    </pattern>
+    <pattern id="orchardPattern" x="0" y="0" width="15" height="15" patternUnits="userSpaceOnUse">
+      <circle cx="7.5" cy="7.5" r="2" fill="#2d5016" opacity="0.6"/>
+      <circle cx="7.5" cy="7.5" r="1" fill="#3d6b20" opacity="0.8"/>
+    </pattern>
+    <pattern id="brushPattern" x="0" y="0" width="16" height="16" patternUnits="userSpaceOnUse">
+      <ellipse cx="4" cy="8" rx="3" ry="2" fill="#6b8e23" opacity="0.6"/>
+      <ellipse cx="12" cy="4" rx="2" ry="3" fill="#6b8e23" opacity="0.6"/>
+      <ellipse cx="10" cy="12" rx="3" ry="2" fill="#6b8e23" opacity="0.6"/>
+    </pattern>
+    <pattern id="grainPattern" x="0" y="0" width="6" height="10" patternUnits="userSpaceOnUse">
+      <line x1="1" y1="0" x2="1" y2="10" stroke="#daa520" stroke-width="0.5" opacity="0.8"/>
+      <line x1="3" y1="0" x2="3" y2="10" stroke="#b8960c" stroke-width="0.5" opacity="0.8"/>
+      <line x1="5" y1="0" x2="5" y2="10" stroke="#daa520" stroke-width="0.5" opacity="0.8"/>
+      <circle cx="1" cy="2" r="0.5" fill="#daa520" opacity="0.8"/>
+      <circle cx="3" cy="4" r="0.5" fill="#b8960c" opacity="0.8"/>
+      <circle cx="5" cy="3" r="0.5" fill="#daa520" opacity="0.8"/>
+    </pattern>
+    <pattern id="marshPattern" x="0" y="0" width="20" height="20" patternUnits="userSpaceOnUse">
+      <path d="M5,10 Q5,15 3,15 T3,10" fill="none" stroke="#4a7c59" stroke-width="1" opacity="0.6"/>
+      <path d="M8,5 Q8,10 6,10 T6,5" fill="none" stroke="#4a7c59" stroke-width="1" opacity="0.6"/>
+      <path d="M15,12 Q15,17 13,17 T13,12" fill="none" stroke="#4a7c59" stroke-width="1" opacity="0.6"/>
+      <path d="M18,2 Q18,7 16,7 T16,2" fill="none" stroke="#4a7c59" stroke-width="1" opacity="0.6"/>
+      <ellipse cx="10" cy="12" rx="2" ry="1" fill="#5f9ea0" opacity="0.3"/>
+    </pattern>
+    <pattern id="openGroundPattern" x="0" y="0" width="30" height="30" patternUnits="userSpaceOnUse">
+      <circle cx="10" cy="10" r="0.5" fill="#c4b5a0" opacity="0.3"/>
+      <circle cx="20" cy="20" r="0.5" fill="#c4b5a0" opacity="0.3"/>
+      <circle cx="5"  cy="25" r="0.5" fill="#c4b5a0" opacity="0.3"/>
+      <circle cx="25" cy="5"  r="0.5" fill="#c4b5a0" opacity="0.3"/>
+    </pattern>
+    <pattern id="sandPattern" x="0" y="0" width="10" height="10" patternUnits="userSpaceOnUse">
+      <circle cx="2" cy="2" r="0.3" fill="#d2b48c" opacity="0.4"/>
+      <circle cx="5" cy="4" r="0.3" fill="#d2b48c" opacity="0.4"/>
+      <circle cx="8" cy="3" r="0.3" fill="#d2b48c" opacity="0.4"/>
+      <circle cx="3" cy="7" r="0.3" fill="#d2b48c" opacity="0.4"/>
+      <circle cx="7" cy="8" r="0.3" fill="#d2b48c" opacity="0.4"/>
+    </pattern>
+    <pattern id="scrubPattern" x="0" y="0" width="15" height="15" patternUnits="userSpaceOnUse">
+      <circle cx="5" cy="5" r="1" fill="#a0826d" opacity="0.5"/>
+      <circle cx="10" cy="10" r="1" fill="#a0826d" opacity="0.5"/>
+      <path d="M3,10 L5,8 L7,10" fill="none" stroke="#a0826d" stroke-width="0.5" opacity="0.6"/>
+      <path d="M8,5 L10,3 L12,5" fill="none" stroke="#a0826d" stroke-width="0.5" opacity="0.6"/>
+    </pattern>
+  </defs>`;
+}
+
+function addHillshadeDefs(){
+  return `
+  <defs>
+    <filter id="hillshade" x="-40%" y="-40%" width="180%" height="180%" color-interpolation-filters="sRGB">
+      <feGaussianBlur in="SourceAlpha" stdDeviation="1" result="blur"/>
+      <feDiffuseLighting in="blur" surfaceScale="2" lighting-color="#ffffff" result="light">
+        <feDistantLight azimuth="315" elevation="35"/>
+      </feDiffuseLighting>
+      <feComposite in="light" in2="SourceGraphic" operator="in" result="litPaint"/>
+      <feBlend in="SourceGraphic" in2="litPaint" mode="multiply"/>
+    </filter>
+  </defs>`;
+}
+
+/* ===== Heightmap shading (triangle fan) ===== */
+function renderHeightMapShading(hexData, hexId, baseColorHex){
+  const verts=[]; for(let i=0;i<6;i++) verts.push(getVertexPosition(i));
+  const C={x:0,y:0}; const e=hexData.elevations.slice(); const eC=hexData.centerElevation;
+
+  function mixLightness(hex, t){
+    function hexToRgb(h){const m=h.match(/^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i);return m?{r:parseInt(m[1],16),g:parseInt(m[2],16),b:parseInt(m[3],16)}:null;}
+    function rgbToHex(r,g,b){return '#'+[r,g,b].map(v=>v.toString(16).padStart(2,'0')).join('');}
+    function rgbToHsl(r,g,b){r/=255;g/=255;b/=255;const M=Math.max(r,g,b),m=Math.min(r,g,b);let h,s,l=(M+m)/2;if(M===m){h=s=0;}else{const d=M-m;s=l>0.5?d/(2-M-m):d/(M+m);switch(M){case r:h=(g-b)/d+(g<b?6:0);break;case g:h=(b-r)/d+2;break;default:h=(r-g)/d+4;}h/=6;}return {h,s,l};}
+    function hslToRgb(h,s,l){let r,g,b;if(s===0){r=g=b=l;}else{const q=l<.5?l*(1+s):l+s-l*s,p=2*l-q,f=t=>{if(t<0)t+=1;if(t>1)t-=1;if(t<1/6)return p+(q-p)*6*t;if(t<1/2)return q;if(t<2/3)return p+(q-p)*(2/3-t)*6;return p;};r=f(h+1/3);g=f(h);b=f(h-1/3);}return {r:Math.round(r*255),g:Math.round(g*255),b:Math.round(b*255)};}
+    const rgb=hexToRgb(hex); const hsl=rgbToHsl(rgb.r,rgb.g,rgb.b);
+    const range=0.20; // ← per your request
+    const L=Math.max(0, Math.min(1, (hsl.l - range) + (2*range)*t));
+    const out=hslToRgb(hsl.h,hsl.s,L); return rgbToHex(out.r,out.g,out.b);
+  }
+
+  const minZ=Math.min(...e,eC), maxZ=Math.max(...e,eC);
+  const nz=v => (maxZ===minZ) ? 0.5 : (v-minZ)/(maxZ-minZ);
+
+  let defs='', tris='';
+  for(let i=0;i<6;i++){
+    const V0=C, V1=verts[i], V2=verts[(i+1)%6];
+    const z0=nz(eC), z1=nz(e[i]), z2=nz(e[(i+1)%6]);
+
+    const samples=[{p:V0,z:z0},{p:V1,z:z1},{p:V2,z:z2}];
+    const lo=samples.reduce((a,b)=> b.z<a.z?b:a);
+    const hi=samples.reduce((a,b)=> b.z>a.z?b:a);
+
+    const gid=`grad_${hexId}_${i}`;
+    const proj=(A,B,P)=>{const vx=B.x-A.x,vy=B.y-A.y,wx=P.x-A.x,wy=P.y-A.y;const denom=vx*vx+vy*vy||1;return Math.max(0,Math.min(1,(wx*vx+wy*vy)/denom));};
+    const t0=proj(lo.p,hi.p,V0), t1=proj(lo.p,hi.p,V1), t2=proj(lo.p,hi.p,V2);
+
+    defs += `
+      <linearGradient id="${gid}" gradientUnits="userSpaceOnUse"
+        x1="${lo.p.x}" y1="${lo.p.y}" x2="${hi.p.x}" y2="${hi.p.y}">
+        <stop offset="${(t0*100).toFixed(2)}%" stop-color="${mixLightness(baseColorHex,z0)}"/>
+        <stop offset="${(t1*100).toFixed(2)}%" stop-color="${mixLightness(baseColorHex,z1)}"/>
+        <stop offset="${(t2*100).toFixed(2)}%" stop-color="${mixLightness(baseColorHex,z2)}"/>
+      </linearGradient>`;
+    tris += `<polygon points="${V0.x},${V0.y} ${V1.x},${V1.y} ${V2.x},${V2.y}" fill="url(#${gid})"/>`;
+  }
+
+  const clipId = `hexClip_${hexId}`;
+  const hexClip = `<clipPath id="${clipId}"><polygon points="${getHexPoints()}"/></clipPath>`;
+  return `
+    <defs>${defs}${hexClip}</defs>
+    <g clip-path="url(#${clipId})" filter="url(#hillshade)" style="mix-blend-mode:multiply" opacity="0.55">
+      ${tris}
+    </g>`;
+}
+
+/* ===== Terrain features (center placement for now; Step 2 will honor wedges) ===== */
+function generateScatteredPositions(count, radius){
+  const positions=[];
+  for(let i=0;i<count;i++){
+    const angle=(Math.PI*2/count)*i + (Math.random()-0.5)*0.5;
+    const r=radius*(0.5+Math.random()*0.5);
+    positions.push({x:r*Math.cos(angle), y:r*Math.sin(angle)});
+  }
+  return positions;
+}
+
+function renderTerrainFeatures(hexData, coord){
+  let svg='';                 // all non-building terrain
+  let svgBuilding='';         // building layer (appended last)
+  const hexId = coord.replace(/[^a-zA-Z0-9]/g,'');
+
+  // --------- WOODS ----------
+  if(hexData.features.woods){
+    const mask = (hexData.features.placements && hexData.features.placements.woods) || [false,false,false,false,false,false];
+    const any = mask.some(v=>v);
+    if(any){
+      mask.forEach((on, i)=>{
+        if(!on) return;
+        const tri = getTriangle(i);
+        const cpId = `clip_${hexId}_woods_${i}`;
+        const rng  = seededRng(`${coord}|woods|${i}`);
+        const theta = randBetween(rng, 0, 360);
+
+        svg += `<defs><clipPath id="${cpId}"><polygon points="${trianglePathPoints(i)}"/></clipPath></defs>`;
+        const scatter = scatterInTriangle(rng, tri, Math.floor(randBetween(rng,4,8)));
+        svg += `<g clip-path="url(#${cpId})" transform="rotate(${theta.toFixed(2)})">`;
+        scatter.forEach(p=>{
+          svg += `<circle cx="${p.x}" cy="${p.y}" r="3" fill="#2d5016"/>`;
+          svg += `<circle cx="${p.x}" cy="${p.y-2}" r="2" fill="#3d6b20"/>`;
+        });
+        svg += `</g>`;
+      });
+    } else {
+      const rng  = seededRng(`${coord}|woods`);
+      const theta = randBetween(rng, 0, 360);
+      const pts = generateScatteredPositions(12,15);
+      svg += `<g transform="rotate(${theta.toFixed(2)})">`;
+      pts.forEach(p=>{
+        svg += `<circle cx="${p.x}" cy="${p.y}" r="3" fill="#2d5016"/>`;
+        svg += `<circle cx="${p.x}" cy="${p.y-2}" r="2" fill="#3d6b20"/>`;
+      });
+      svg += `</g>`;
+    }
+  }
+
+  // --------- BRUSH ----------
+  if(hexData.features.brush){
+    const mask = (hexData.features.placements && hexData.features.placements.brush) || [false,false,false,false,false,false];
+    const any = mask.some(v=>v);
+    if(any){
+      mask.forEach((on, i)=>{
+        if(!on) return;
+        const tri = getTriangle(i);
+        const cpId = `clip_${hexId}_brush_${i}`;
+        const rng  = seededRng(`${coord}|brush|${i}`);
+        const theta = randBetween(rng, 0, 360);
+        const n = Math.floor(randBetween(rng,3,7));
+
+        svg += `<defs><clipPath id="${cpId}"><polygon points="${trianglePathPoints(i)}"/></clipPath></defs>`;
+        const scatter = scatterInTriangle(rng, tri, n);
+        svg += `<g clip-path="url(#${cpId})" transform="rotate(${theta.toFixed(2)})">`;
+        scatter.forEach(p=>{
+          svg += `<circle cx="${p.x}" cy="${p.y}" r="4" fill="#8fbc8f" opacity="0.6"/>`;
+        });
+        svg += `</g>`;
+      });
+    } else {
+      const rng  = seededRng(`${coord}|brush`);
+      const theta = randBetween(rng, 0, 360);
+      const pts = generateScatteredPositions(8,20);
+      svg += `<g transform="rotate(${theta.toFixed(2)})">`;
+      pts.forEach(p=>{
+        svg += `<circle cx="${p.x}" cy="${p.y}" r="4" fill="#8fbc8f" opacity="0.6"/>`;
+      });
+      svg += `</g>`;
+    }
+  }
+
+  // --------- ORCHARD (unchanged) ----------
+  if(hexData.features.orchard){
+    const clipId=`clip_${hexId}_orch`;
+    svg += `<defs><clipPath id="${clipId}"><polygon points="${getHexPoints()}"/></clipPath></defs>`;
+    svg += `<rect x="-40" y="-40" width="80" height="80" fill="url(#orchardPattern)" opacity="0.7" clip-path="url(#${clipId})"/>`;
+  }
+
+  // --------- SHELLHOLE (wedge-aware with rotation) ----------
+  if(hexData.features.shellhole){
+    const mask = (hexData.features.placements && hexData.features.placements.shellhole) || [false,false,false,false,false,false];
+    const any = mask.some(v=>v);
+
+    if(any){
+      const selectedCount = mask.reduce((a,b)=>a+(b?1:0),0);
+      const scale = (selectedCount>1) ? 0.85 : 1.0;
+      const baseRx = 15 * scale, baseRy = 10 * scale;
+
+      mask.forEach((on, i)=>{
+        if(!on) return;
+        const tri = getTriangle(i);
+        const P   = centroid(tri.p0, tri.p1, tri.p2);
+        const rng   = seededRng(`${coord}|shellhole|${i}`);
+        const theta = randBetween(rng, 0, 360);
+
+        svg += `<g transform="translate(${P.x.toFixed(2)},${P.y.toFixed(2)}) rotate(${theta.toFixed(2)})">`;
+        svg += `<ellipse cx="0" cy="0" rx="${baseRx}" ry="${baseRy}" fill="#8b6914" stroke="black" stroke-width="1"/>`;
+        svg += `<ellipse cx="0" cy="0" rx="${(baseRx*0.67).toFixed(1)}" ry="${(baseRy*0.6).toFixed(1)}" fill="#654321" opacity="0.6"/>`;
+        svg += `</g>`;
+      });
+    } else {
+      const rng   = seededRng(`${coord}|shellhole`);
+      const theta = randBetween(rng, 0, 360);
+      svg += `<g transform="rotate(${theta.toFixed(2)})">`;
+      svg += `<ellipse cx="0" cy="0" rx="15" ry="10" fill="#8b6914" stroke="black" stroke-width="1"/>`;
+      svg += `<ellipse cx="0" cy="0" rx="10" ry="6" fill="#654321" opacity="0.6"/>`;
+      svg += `</g>`;
+    }
+  }
+
+// --------- BUILDING (wedge-aware, TOP of terrain features) ----------
+if (hexData.features.building) {
+  const mask = (hexData.features.placements && hexData.features.placements.building) || [false,false,false,false,false,false];
+  const any = mask.some(v=>v);
+
+  if (any) {
+    const selectedCount = mask.reduce((a,b)=>a+(b?1:0),0);
+    const baseScale = (selectedCount>1) ? 0.8 : 1.0;   // slight global shrink if many
+
+    mask.forEach((on, i)=>{
+      if (!on) return;
+
+      const tri  = getTriangle(i);
+      const rng  = seededRng(`${coord}|building|${i}`);
+
+      // placement: varied point inside the wedge (not the same biased centroid)
+      const P = sampleBuildingPointInWedge(rng, tri);
+
+      // orientation: mostly random, weak edge bias
+      const theta = buildingOrientationDeg(rng, i);
+
+      // size: 33% reduction baseline, plus ±5% jitter (still deterministic)
+      const sizeJitter = 1 + randBetween(rng, -0.05, 0.05);
+      const finalScale = baseScale * 0.67 * sizeJitter;
+
+      svgBuilding += `<g transform="translate(${P.x.toFixed(2)},${P.y.toFixed(2)}) rotate(${theta.toFixed(2)})">`;
+      svgBuilding += buildingGlyph(finalScale);
+      svgBuilding += `</g>`;
+    });
+
+  } else {
+    // Fallback: center building with random orientation + size jitter
+    const rng   = seededRng(`${coord}|building`);
+    const theta = randBetween(rng, 0, 360);
+    const sizeJitter = 1 + randBetween(rng, -0.05, 0.05);
+    const finalScale = 0.67 * sizeJitter;
+
+    svgBuilding += `<g transform="rotate(${theta.toFixed(2)})">`;
+    svgBuilding += buildingGlyph(finalScale);
+    svgBuilding += `</g>`;
+  }
+}
+
+
+  // Buildings must be on top
+  return svg + svgBuilding;
+}
+
+
+/* ===== Linear features (bezier through center) ===== */
+function renderLinearFeatures(hexData){
+  const type=hexData.linearFeature.type;
+  if(!type) return '';
+  const entry=edgePoint(hexData.linearFeature.entryEdge);
+  const center={x:0,y:0};
+  const exitVal=hexData.linearFeature.exitEdge;
+  const exit= exitVal!=='' ? edgePoint(parseInt(exitVal)) : null;
+
+  function edgePoint(idx){ return getEdgeMidpoint(idx); }
+  let d=`M ${entry.x},${entry.y} `;
+  let k=0.25;
+  if(exit){
+    const diff=Math.abs(parseInt(exitVal) - hexData.linearFeature.entryEdge);
+    const turn=Math.min(diff,6-diff);
+    if(turn<=2) k=0.15;
+  }
+  const c1=interpolatePoint(entry,center,k);
+  const c2=interpolatePoint(entry,center,1-k);
+  d+=`C ${c1.x},${c1.y} ${c2.x},${c2.y} ${center.x},${center.y} `;
+  if(exit){
+    const c4=interpolatePoint(center,exit,1-k);
+    d+=`S ${c4.x},${c4.y} ${exit.x},${exit.y}`;
+  }
+  let svg='';
+  switch(type){
+    case 'Road':
+      svg+=`<path d="${d}" stroke="#8b7d6b" stroke-width="4" fill="none"/>`;
+      svg+=`<path d="${d}" stroke="#a0937f" stroke-width="3" fill="none"/>`;
+      break;
+    case 'Stream':
+      svg+=`<path d="${d}" stroke="#4682b4" stroke-width="3" fill="none"/>`;
+      svg+=`<path d="${d}" stroke="#5f9ea0" stroke-width="2" stroke-dasharray="5,3" fill="none"/>`;
+      break;
+    case 'Path':
+      svg+=`<path d="${d}" stroke="#8b6f47" stroke-width="2" stroke-dasharray="4,2" fill="none"/>`;
+      break;
+    case 'Railroad':
+      svg+=`<path d="${d}" stroke="black" stroke-width="3" fill="none"/>`;
+      svg+=`<path d="${d}" stroke="white" stroke-width="2" stroke-dasharray="8,2" fill="none"/>`;
+      break;
+  }
+  return svg;
+}
+
+/* ===== Hexside features ===== */
+function renderHexsideFeatures(hexData){
+  let svg='';
+  if(hexData.hexsideFeatures.wall){
+    const e=parseInt(hexData.hexsideFeatures.wall);
+    const v1=getVertexPosition(e), v2=getVertexPosition((e+1)%6);
+    svg+=`<line x1="${v1.x}" y1="${v1.y}" x2="${v2.x}" y2="${v2.y}" stroke="#696969" stroke-width="3"/>`;
+    svg+=`<line x1="${v1.x}" y1="${v1.y}" x2="${v2.x}" y2="${v2.y}" stroke="#808080" stroke-width="2"/>`;
+  }
+  if(hexData.hexsideFeatures.hedge){
+    const e=parseInt(hexData.hexsideFeatures.hedge);
+    const v1=getVertexPosition(e), v2=getVertexPosition((e+1)%6);
+    svg+=`<line x1="${v1.x}" y1="${v1.y}" x2="${v2.x}" y2="${v2.y}" stroke="#228b22" stroke-width="3" stroke-dasharray="3,1"/>`;
+  }
+  return svg;
+}
+
+/* ===== Hex renderer ===== */
+function renderHex(position, coord, hexData){
+  const color = TERRAIN_COLORS[hexData.baseTerrain];
+  const isSelected = coord===selectedHex;
+
+  let svg = `<g transform="translate(${position.x},${position.y})" class="hex-clickable" onclick="selectHex('${coord}')">`;
+
+  // Base color
+  svg += `<polygon points="${getHexPoints()}" fill="${color}" stroke="none"/>`;
+
+  // Heightmap shading
+  const hexId = coord.replace(/[^a-zA-Z0-9]/g,'');
+  svg += renderHeightMapShading(hexData, hexId, color || '#faf6e6');
+
+  // v35 pattern overlay
+  const patternMap = {
+    OpenGround:'openGroundPattern', Woods:'woodsPattern', Grain:'grainPattern',
+    Marsh:'marshPattern', Sand:'sandPattern', Scrub:'scrubPattern',
+    Orchard:'orchardPattern', Brush:'brushPattern'
+  };
+  if(patternMap[hexData.baseTerrain]){
+    svg += `<polygon points="${getHexPoints()}" fill="url(#${patternMap[hexData.baseTerrain]})" stroke="none"/>`;
+  }
+
+  // Terrain features (center for now)
+  svg += renderTerrainFeatures(hexData, coord);
+
+  // Linear + hexside
+  svg += renderLinearFeatures(hexData);
+  svg += renderHexsideFeatures(hexData);
+
+  // Outline + label
+  const strokeWidth = isSelected ? '3':'1';
+  const strokeColor = isSelected ? '#2196F3':'black';
+  svg += `<polygon points="${getHexPoints()}" fill="none" stroke="${strokeColor}" stroke-width="${strokeWidth}"/>`;
+  svg += `<text x="0" y="-32" text-anchor="middle" font-size="12" font-weight="bold">${coord}</text>`;
+  svg += `</g>`;
+  return svg;
+}
+
+/* ===== Compass & map rendering ===== */
+function getHexPosition(col,row){
+  const x = col*HEX_SIZE*1.5;
+  const y = row*HEX_HEIGHT + (col%2)*HEX_HEIGHT*0.5;
+  return { x:x+PADDING, y:y+PADDING + TOP_MARGIN_ROWS*HEX_HEIGHT };
+}
+
+function drawCompassRose(cx, cy) {
+  const rIn = HEX_SIZE * Math.sqrt(3) / 2;
+  const OUTER_PAD = 8;
+  const R_OUTER   = rIn - OUTER_PAD;
+  const R_INNER   = R_OUTER * 0.78;
+
+  const LABEL_GAP  = 6;
+  const labelSizeN = Math.round(HEX_SIZE * 0.26);
+  const nY         = - (R_OUTER + LABEL_GAP);
+
+  const arrowLen = R_INNER * 0.44;
+  const arrowW   = arrowLen * 0.62;
+  const tipY     = - (R_INNER - 2);
+  const baseY    = tipY + arrowLen;
+  const arrowPts = `0,${tipY.toFixed(2)} ${(-arrowW/2).toFixed(2)},${baseY.toFixed(2)} ${(arrowW/2).toFixed(2)},${baseY.toFixed(2)}`;
+
+  return `
+    <g transform="translate(${cx},${cy})">
+      <circle cx="0" cy="0" r="${(R_OUTER + 4).toFixed(2)}" fill="white"/>
+      <circle cx="0" cy="0" r="${R_OUTER.toFixed(2)}" fill="none" stroke="black" stroke-width="2"/>
+      <circle cx="0" cy="0" r="${R_INNER.toFixed(2)}" fill="none" stroke="black" stroke-width="1.6"/>
+      <g fill="#000"><polygon points="${arrowPts}"/></g>
+      <g fill="#777" opacity="0.65" transform="rotate(90)"><polygon points="${arrowPts}"/></g>
+      <g fill="#777" opacity="0.65" transform="rotate(180)"><polygon points="${arrowPts}"/></g>
+      <g fill="#777" opacity="0.65" transform="rotate(270)"><polygon points="${arrowPts}"/></g>
+      <text x="0" y="${nY.toFixed(2)}" text-anchor="middle" dominant-baseline="central"
+            font-size="${labelSizeN}" font-weight="bold">N</text>
+    </g>
+  `;
+}
+
+// --- RNG (deterministic) ---
+function strHash(s){ let h=2166136261>>>0; for(let i=0;i<s.length;i++){ h^=s.charCodeAt(i); h=Math.imul(h,16777619);} return h>>>0; }
+function mulberry32(seed){ return function(){ let t=seed+=0x6D2B79F5; t=Math.imul(t^t>>>15,t|1); t^=t+Math.imul(t^t>>>7,t|61); return ((t^t>>>14)>>>0)/4294967296; }; }
+function seededRng(key){ return mulberry32(strHash(key)); }
+function randBetween(rng,a,b){ return a + (b-a)*rng(); }
+
+// --- Triangle / wedge geometry ---
+function getTriangle(i){
+  // triangle i = [center -> vertex i -> vertex (i+1)%6]
+  return { p0:{x:0,y:0}, p1:getVertexPosition(i), p2:getVertexPosition((i+1)%6) };
+}
+function centroid(p0,p1,p2){ return { x:(p0.x+p1.x+p2.x)/3, y:(p0.y+p1.y+p2.y)/3 }; }
+// Bias point a bit toward the edge so clusters don't sit on center
+function biasedCentroid(p0,p1,p2){
+  return { x: 0.25*p0.x + 0.375*p1.x + 0.375*p2.x,
+           y: 0.25*p0.y + 0.375*p1.y + 0.375*p2.y };
+}
+function trianglePathPoints(i){
+  const t=getTriangle(i);
+  return `${t.p0.x},${t.p0.y} ${t.p1.x},${t.p1.y} ${t.p2.x},${t.p2.y}`;
+}
+// Barycentric sampling guaranteed inside triangle
+function scatterInTriangle(rng, t, count){
+  const pts=[];
+  for(let k=0;k<count;k++){
+    let u=rng(), v=rng();
+    if(u+v>1){ u=1-u; v=1-v; }
+    const w=1-u-v;
+    const x = u*t.p0.x + v*t.p1.x + w*t.p2.x;
+    const y = u*t.p0.y + v*t.p1.y + w*t.p2.y;
+    pts.push({x,y});
+  }
+  return pts;
+}
+
+
+function renderMap(){
+  const mapSize=document.getElementById('mapSize').value;
+  let rows, cols;
+  switch(mapSize){
+    case 'single': rows=cols=1; break;
+    case 'small':  rows=cols=3; break;
+    case 'medium': rows=cols=5; break; // 5x5
+    case 'large':  rows=cols=7; break;
+  }
+  const totalRows = rows + TOP_MARGIN_ROWS + BOTTOM_MARGIN_ROWS;
+  const width  = (cols-1)*HEX_SIZE*1.5 + HEX_WIDTH + PADDING*2;
+  const height = totalRows*HEX_HEIGHT + HEX_HEIGHT*0.5 + PADDING*2;
+
+  let svg = `<svg width="${width}" height="${height}" xmlns="http://www.w3.org/2000/svg">`;
+  svg += createPatternDefs();
+  svg += addHillshadeDefs();
+
+  for(let r=0;r<rows;r++){
+    for(let c=0;c<cols;c++){
+      const pos=getHexPosition(c,r);
+      const coord=`${String.fromCharCode(65+c)}${r+1}`;
+      svg += renderHex(pos, coord, mapData[coord]);
+    }
+  }
+
+  if(mapSize!=='single'){
+    const midCol = Math.floor(cols/2);
+    const virtualRowIndex = (mapSize==='medium') ? rows : -1; // C6 for 5x5; top-center otherwise
+    const compPos = getHexPosition(midCol, virtualRowIndex);
+    svg += drawCompassRose(compPos.x, compPos.y);
+  }
+
+  svg += `</svg>`;
+  document.getElementById('mapOutput').innerHTML = svg;
+}
+
+/* ===== Boot ===== */
+initializeMap();
+renderMap();
+
+</script>
+</body>
+</html>

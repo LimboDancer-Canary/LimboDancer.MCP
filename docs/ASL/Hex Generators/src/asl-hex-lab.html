@@ -1,0 +1,163 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1.0" />
+  <title>ASL Terrain Type SVG Hex Viewer</title>
+  <style>
+    :root {
+      /* Natural Terrain */
+      --open-ground: #90a955;
+      --woods: #2d5016;
+      --light-woods: #4a6b2e;
+      --brush: #6b7a4f;
+      --orchard: #7a8556;
+      --grain: #daa520;
+      --marsh: #3b7a57;
+      --crag: #8b8680;
+      --graveyard: #7d7b77;
+
+      /* Water */
+      --water-blue: #4682b4;
+      --water-shallow: #5f9ea0;
+      --stream-blue: #6495ed;
+
+      /* Urban/Damaged */
+      --rubble: #9e8b7a;
+      --runway: #696969;
+      --shellhole-brown: #7a6651;
+
+      /* Buildings */
+      --building-wood: #8b6914;
+      --building-wood-dark: #654b0e;
+      --building-stone: #8b7d6b;
+      --building-stone-dark: #5c5248;
+      --building-stone-2: #6b6457;
+      --building-factory: #6b5d4f;
+    }
+
+    * { margin:0; padding:0; box-sizing:border-box; }
+    body { font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Arial,sans-serif; display:flex; height:100vh; background:#f5f5f5; }
+
+    /* Sidebar */
+    .sidebar { width:300px; background:#fff; border-right:1px solid #ddd; overflow-y:auto; padding:20px; }
+    h1 { font-size:20px; margin-bottom:20px; color:#333; }
+    h2 { font-size:14px; text-transform:uppercase; color:#666; margin:20px 0 10px; font-weight:600; }
+
+    .terrain-list { list-style:none; }
+    .terrain-item { padding:8px 12px; margin:2px 0; cursor:pointer; border-radius:4px; transition:background-color .2s; font-size:14px; }
+    .terrain-item:hover { background:#f0f0f0; }
+    .terrain-item.active { background:#e3f2fd; color:#1976d2; font-weight:500; }
+
+    /* Main viewing area */
+    .main { flex:1; display:flex; flex-direction:column; background:#fafafa; }
+    .header { background:#fff; border-bottom:1px solid #ddd; padding:20px; }
+    .header h3 { font-size:18px; color:#333; }
+    .header .subtitle { font-size:14px; color:#666; margin-top:5px; }
+
+    .viewer { flex:1; display:flex; align-items:center; justify-content:center; padding:40px; }
+    .hex-container { background:white; border-radius:8px; box-shadow:0 2px 8px rgba(0,0,0,0.1); padding:40px; }
+
+    svg { width:300px; height:260px; }
+
+    .controls { background:#fff; border-top:1px solid #ddd; padding:20px; display:flex; gap:20px; align-items:center; }
+    .checkbox-group { display:flex; gap:20px; font-size:14px; }
+    label { display:flex; align-items:center; gap:5px; cursor:pointer; }
+    input[type="checkbox"] { cursor:pointer; }
+  </style>
+</head>
+<body>
+  <div class="sidebar">
+    <h1>ASL Terrain Types</h1>
+
+    <h2>Natural Terrain</h2>
+    <ul class="terrain-list">
+      <li class="terrain-item" data-terrain="openGround">Open Ground</li>
+      <li class="terrain-item" data-terrain="woods">Woods</li>
+      <li class="terrain-item" data-terrain="lightWoods">Light Woods</li>
+      <li class="terrain-item" data-terrain="brush">Brush</li>
+      <li class="terrain-item" data-terrain="orchard">Orchard</li>
+      <li class="terrain-item" data-terrain="vineyard">Vineyard</li>
+      <li class="terrain-item" data-terrain="grain">Grain</li>
+      <li class="terrain-item" data-terrain="marsh">Marsh</li>
+      <li class="terrain-item" data-terrain="mudflat">Mudflat</li>
+      <li class="terrain-item" data-terrain="crag">Crag</li>
+      <li class="terrain-item" data-terrain="graveyard">Graveyard</li>
+    </ul>
+
+    <h2>Water Features</h2>
+    <ul class="terrain-list">
+      <li class="terrain-item" data-terrain="stream">Stream</li>
+      <li class="terrain-item" data-terrain="river">River</li>
+      <li class="terrain-item" data-terrain="canal">Canal</li>
+      <li class="terrain-item" data-terrain="pond">Pond</li>
+      <li class="terrain-item" data-terrain="lake">Lake</li>
+      <li class="terrain-item" data-terrain="ocean">Ocean</li>
+    </ul>
+
+    <h2>Depression Terrain</h2>
+    <ul class="terrain-list">
+      <li class="terrain-item" data-terrain="gully">Gully</li>
+      <li class="terrain-item" data-terrain="valley">Valley</li>
+    </ul>
+
+    <h2>Damaged Terrain</h2>
+    <ul class="terrain-list">
+      <li class="terrain-item" data-terrain="shellholes">Shellholes</li>
+      <li class="terrain-item" data-terrain="rubble">Rubble</li>
+      <li class="terrain-item" data-terrain="debris">Debris</li>
+    </ul>
+
+    <h2>Special Terrain</h2>
+    <ul class="terrain-list">
+      <li class="terrain-item" data-terrain="runway">Runway</li>
+      <li class="terrain-item" data-terrain="villageTerrain">Village Terrain</li>
+      <li class="terrain-item" data-terrain="preparedFireZone">Prepared Fire Zone</li>
+    </ul>
+
+    <h2>Building Overlays</h2>
+    <ul class="terrain-list">
+      <li class="terrain-item" data-terrain="building-wooden-1">Wooden Building (1L)</li>
+      <li class="terrain-item" data-terrain="building-wooden-2">Wooden Building (2L)</li>
+      <li class="terrain-item" data-terrain="building-stone-1">Stone Building (1L)</li>
+      <li class="terrain-item" data-terrain="building-stone-2">Stone Building (2L)</li>
+      <li class="terrain-item" data-terrain="building-factory">Factory</li>
+      <li class="terrain-item" data-terrain="building-marketplace">Marketplace</li>
+      <li class="terrain-item" data-terrain="building-rowhouse">Rowhouse</li>
+      <li class="terrain-item" data-terrain="building-church">Church</li>
+    </ul>
+  </div>
+
+  <div class="main">
+    <div class="header">
+      <h3 id="terrainName">Select a Terrain Type</h3>
+      <div class="subtitle" id="terrainDescription">Choose a terrain type from the menu to view its SVG representation</div>
+    </div>
+
+    <div class="viewer">
+      <div class="hex-container">
+        <svg id="hexSvg" viewBox="0 0 60 52" xmlns="http://www.w3.org/2000/svg">
+          <defs id="svgDefs"></defs>
+          <g id="hexContent">
+            <!-- Default empty hex -->
+            <polygon points="60,26 45,51.96 15,51.96 0,26 15,0.04 45,0.04"
+                     fill="#f0f0f0" stroke="#999" stroke-width="0.5"/>
+            <text x="30" y="26" text-anchor="middle" font-size="8" fill="#999">No terrain selected</text>
+          </g>
+        </svg>
+      </div>
+    </div>
+
+    <div class="controls">
+      <div class="checkbox-group">
+        <label><input type="checkbox" id="showGrid" checked> Show Hex Grid</label>
+        <label><input type="checkbox" id="showCoords"> Show Coordinates</label>
+        <label><input type="checkbox" id="showCenter" checked> Show Center Dot</label>
+      </div>
+    </div>
+  </div>
+
+  <!-- Module entry (shared lib/ used inside) -->
+  <script type="module" src="./HexLab.js"></script>
+</body>
+</html>

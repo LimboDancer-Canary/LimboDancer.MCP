@@ -1,0 +1,68 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>ASL Board Visualizer (Flat-Top, N=0, Modular)</title>
+<style>
+  :root { --bg:#f7f7f9; --panel:#fff; --ink:#111; --muted:#6b7280; --accent:#4e6cff; }
+  * { box-sizing:border-box; }
+  body { margin:0; font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial; background:var(--bg); color:var(--ink); }
+  header { padding:16px 20px 8px; }
+  header h1 { margin:0 0 4px; font-size:20px; }
+  .sub { color:var(--muted); font-size:13px; }
+  .wrap { padding: 0 20px 20px; display:grid; grid-template-columns: 360px 1fr; gap:16px; }
+  .card { background:var(--panel); border-radius:12px; box-shadow:0 6px 18px rgba(0,0,0,.06); overflow:hidden; }
+  .card h2 { margin:0; padding:10px 12px; font-size:14px; background:#fafbfc; border-bottom:1px solid #eef0f3; }
+  .card .body { padding:12px; }
+  .row { display:flex; gap:8px; align-items:center; }
+  input[type="file"] { flex:1; }
+  textarea { width:100%; min-height:180px; font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas; font-size:12px; padding:8px; border:1px solid #e5e7eb; border-radius:8px; resize:vertical; }
+  .btn { background:var(--accent); color:#fff; border:0; border-radius:10px; padding:10px 12px; font-weight:600; cursor:pointer; }
+  .btn.secondary { background:#e5e7eb; color:#111; }
+  #stage { width:100%; height: calc(100vh - 200px); min-height:520px; background:#edf2f7; border-radius:10px; display:flex; align-items:center; justify-content:center; color:#6b7280; }
+  svg { width:100%; height:100%; display:block; }
+</style>
+</head>
+<body>
+<header>
+  <h1>ASL Board Visualizer <small style="font-weight:600;">(Flat-Top, N=0)</small></h1>
+  <div class="sub">ES modules + your original terrain defs. Roads are curvy & stitched; legend lists every terrain present.</div>
+</header>
+
+<div class="wrap">
+  <div class="card">
+    <h2>Load JSON</h2>
+    <div class="body">
+      <div class="row">
+        <input type="file" id="file" accept=".json"/>
+        <button class="btn secondary" id="btn-load">Load File</button>
+      </div>
+      <textarea id="json" placeholder="Paste your ASL JSON here..."></textarea>
+      <div class="row">
+        <button class="btn" id="btn-render">Render JSON</button>
+        <button class="btn secondary" id="btn-clear">Clear</button>
+      </div>
+      <div id="msg" style="color:#b91c1c; font-size:12px; display:none; margin-top:8px;"></div>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>Display</h2>
+    <div class="body">
+      <label><input type="checkbox" id="toggle-roads" checked/> Show roads</label><br/>
+      <label><input type="checkbox" id="toggle-labels" checked/> Show hex labels</label><br/>
+      <label><input type="checkbox" id="toggle-grid" checked/> Outline hexes</label>
+    </div>
+  </div>
+
+  <div class="card" style="grid-column: 1 / -1;">
+    <h2>Board</h2>
+    <div class="body"><div id="stage">Load or paste JSON, then click <b>Render JSON</b>.</div></div>
+  </div>
+</div>
+
+<!-- Load the visualizer logic -->
+<script type="module" src="./HexMap.js"></script>
+</body>
+</html>

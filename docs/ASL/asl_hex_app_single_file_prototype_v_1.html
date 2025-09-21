@@ -1,0 +1,603 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>ASL Hex App – Single‑File Prototype v1</title>
+  <style>
+    :root{
+      --bg:#f5f7fb; --panel:#ffffff; --ink:#0f172a; --muted:#64748b; --line:#e2e8f0;
+      --accent:#2563eb; --accent-2:#22c55e; --chip:#e3f2fd; --hex-border:#d4d4d8;
+    }
+    *{box-sizing:border-box}
+    body{margin:0;font-family:ui-sans-serif,system-ui,Segoe UI,Roboto,Arial; background:var(--bg); color:var(--ink)}
+    .wrap{display:flex;gap:18px;max-width:1500px;margin:16px auto;padding:0 16px}
+    .panel{width:360px;background:var(--panel);border:1px solid var(--line);border-radius:14px;box-shadow:0 2px 10px rgba(2,6,23,.05);padding:18px;max-height:86vh;overflow:auto}
+    .stage{flex:1;background:var(--panel);border:1px solid var(--line);border-radius:14px;box-shadow:0 2px 10px rgba(2,6,23,.05);padding:18px}
+    h1{font-size:18px;margin:0 0 12px}
+    h2{font-size:14px;margin:12px 0 8px;color:var(--muted);text-transform:uppercase;letter-spacing:.08em}
+    label{font-weight:600;font-size:13px;margin:6px 0 6px;display:block}
+    select,input[type="number"],input[type="text"]{width:100%;padding:8px 10px;border:1px solid var(--line);border-radius:10px;font:inherit}
+    .row{display:flex;gap:10px}
+    .g{display:grid;gap:6px}
+    .g-3{grid-template-columns:repeat(3,1fr)}
+    .muted{color:var(--muted)}
+    .pill{background:var(--chip);padding:8px 10px;border-radius:10px;border:1px solid #cfe3ff;font-weight:700;text-align:center}
+    .btn{display:inline-flex;align-items:center;gap:8px;padding:8px 10px;border:1px solid var(--line);border-radius:10px;background:#fff;cursor:pointer;font-weight:600}
+    .btn:hover{background:#f8fafc}
+    .btn.primary{background:var(--accent);border-color:var(--accent);color:#fff}
+    .btn.ghost{background:transparent}
+    .btnbar{display:flex;gap:8px;flex-wrap:wrap}
+    svg{border:1px solid var(--line)}
+    .hex-click{cursor:pointer}
+
+    /* wedge picker */
+    .wedge-picker{width:64px;height:56px;display:block}
+    .wedge{fill:rgba(0,0,0,0.001);stroke:#9aa0a6;stroke-width:1;cursor:pointer}
+    .wedge:hover{stroke:#111}
+    .wedge.selected{stroke:#111}
+    .wedge-picker[data-tint="woods"] .wedge.selected{fill:#2e7d32;fill-opacity:.35}
+    .wedge-picker[data-tint="building"] .wedge.selected{fill:#8b6f47;fill-opacity:.35}
+    .wedge-picker[data-tint="brush"] .wedge.selected{fill:#6b8e23;fill-opacity:.35}
+    .wedge-picker[data-tint="shellhole"] .wedge.selected{fill:#6b4f1d;fill-opacity:.35}
+    .wedge-toolbar{display:flex;align-items:flex-start;gap:10px;margin:2px 0 10px}
+    .wedge-actions{display:flex;gap:6px}
+    .mini{font-size:11px;padding:3px 6px;border:1px solid var(--line);border-radius:6px;cursor:pointer;background:#fff}
+
+    .hr{height:1px;background:var(--line);margin:14px 0}
+    .labelrow{display:flex;align-items:center;justify-content:space-between}
+    .feature-row{display:flex;align-items:center;justify-content:space-between}
+
+    .legend{display:flex;gap:12px;align-items:center;flex-wrap:wrap;margin:6px 0 0}
+    .key{display:flex;gap:6px;align-items:center}
+    .swatch{width:14px;height:14px;border:1px solid #00000020}
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <aside class="panel">
+      <h1>ASL Hex App</h1>
+      <div class="pill" id="selHex">Click a hex to edit</div>
+
+      <h2>Map</h2>
+      <label>Preset size</label>
+      <select id="mapSize">
+        <option value="single">Single</option>
+        <option value="3">3×3</option>
+        <option value="5" selected>5×5</option>
+        <option value="7">7×7</option>
+        <option value="9">9×9</option>
+      </select>
+      <div class="btnbar" style="margin-top:8px">
+        <button class="btn" id="btnNew">New Map</button>
+        <label class="btn ghost" for="jsonFile">Load JSON<input id="jsonFile" type="file" accept="application/json" style="display:none"></label>
+        <button class="btn" id="btnExport">Export JSON</button>
+      </div>
+
+      <div class="hr"></div>
+
+      <div id="hexControls" style="display:none">
+        <h2>Hex</h2>
+        <label>Base Terrain</label>
+        <select id="baseTerrain">
+          <option value="OpenGround">Open Ground</option>
+          <option value="Woods">Woods</option>
+          <option value="Grain">Grain</option>
+          <option value="Marsh">Marsh</option>
+          <option value="Sand">Sand</option>
+          <option value="Scrub">Scrub</option>
+          <option value="Orchard">Orchard</option>
+        </select>
+
+        <label style="margin-top:8px">Vertex Elevations (levels)</label>
+        <div class="g g-3">
+          <div><small>N</small><input type="number" id="elev0" step="0.1" min="0" max="5" value="1"></div>
+          <div><small>NE</small><input type="number" id="elev1" step="0.1" min="0" max="5" value="1"></div>
+          <div><small>SE</small><input type="number" id="elev2" step="0.1" min="0" max="5" value="1"></div>
+          <div><small>S</small><input type="number" id="elev3" step="0.1" min="0" max="5" value="1"></div>
+          <div><small>SW</small><input type="number" id="elev4" step="0.1" min="0" max="5" value="1"></div>
+          <div><small>NW</small><input type="number" id="elev5" step="0.1" min="0" max="5" value="1"></div>
+        </div>
+        <label style="margin-top:6px">Center Elevation</label>
+        <input type="number" id="centerElev" step="0.1" min="0" max="5" value="1" />
+
+        <div class="hr"></div>
+        <h2>Terrain Features</h2>
+        <div class="feature-row"><label for="chkWoods">Woods</label><input type="checkbox" id="chkWoods"></div>
+        <div class="wedge-toolbar">
+          <div id="picker-woods"></div>
+          <div class="wedge-actions">
+            <button class="mini" data-all="woods">All</button>
+            <button class="mini" data-none="woods">None</button>
+          </div>
+        </div>
+
+        <div class="feature-row"><label for="chkBuilding">Building</label><input type="checkbox" id="chkBuilding"></div>
+        <div class="wedge-toolbar">
+          <div id="picker-building"></div>
+          <div class="wedge-actions">
+            <button class="mini" data-all="building">All</button>
+            <button class="mini" data-none="building">None</button>
+          </div>
+        </div>
+
+        <div class="feature-row"><label for="chkBrush">Brush</label><input type="checkbox" id="chkBrush"></div>
+        <div class="wedge-toolbar">
+          <div id="picker-brush"></div>
+          <div class="wedge-actions">
+            <button class="mini" data-all="brush">All</button>
+            <button class="mini" data-none="brush">None</button>
+          </div>
+        </div>
+
+        <div class="feature-row"><label for="chkShellhole">Shellhole</label><input type="checkbox" id="chkShellhole"></div>
+        <div class="wedge-toolbar">
+          <div id="picker-shellhole"></div>
+          <div class="wedge-actions">
+            <button class="mini" data-all="shellhole">All</button>
+            <button class="mini" data-none="shellhole">None</button>
+          </div>
+        </div>
+
+        <div class="feature-row"><label for="chkOrchard">Orchard (whole hex)</label><input type="checkbox" id="chkOrchard"></div>
+
+        <div class="hr"></div>
+        <h2>Linear Feature</h2>
+        <label>Type</label>
+        <select id="linearType">
+          <option value="">None</option>
+          <option value="Road">Road</option>
+          <option value="Stream">Stream</option>
+          <option value="Railroad">Railroad</option>
+          <option value="Path">Path</option>
+        </select>
+        <div class="row">
+          <div style="flex:1"><label>Entry Edge (0=N)</label>
+            <select id="entryEdge"></select>
+          </div>
+          <div style="flex:1"><label>Exit Edge</label>
+            <select id="exitEdge"></select>
+          </div>
+        </div>
+
+        <div class="hr"></div>
+        <h2>Hexside Feature</h2>
+        <div class="row">
+          <div style="flex:1"><label>Wall on Edge</label><select id="wallEdge"></select></div>
+          <div style="flex:1"><label>Hedge on Edge</label><select id="hedgeEdge"></select></div>
+        </div>
+      </div>
+
+      <div class="hr"></div>
+      <div class="legend">
+        <div class="key"><span class="swatch" style="background:#e5f3cf"></span>Open</div>
+        <div class="key"><span class="swatch" style="background:#d7ead7"></span>Woods</div>
+        <div class="key"><span class="swatch" style="background:#efe6d6"></span>Building</div>
+        <div class="key"><span class="swatch" style="background:#f6efe0"></span>Grain</div>
+      </div>
+    </aside>
+
+    <main class="stage">
+      <div class="row" style="justify-content:space-between;align-items:center;margin-bottom:10px">
+        <strong>ASL Map</strong>
+        <span class="muted">Edge numbering: 0=N, 1=NE, 2=SE, 3=S, 4=SW, 5=NW (flat‑top)</span>
+      </div>
+      <div id="mapHost"></div>
+    </main>
+  </div>
+
+<script>
+(function(){
+  // ========= Geometry & constants (flat‑top, 0=N) =========
+  const HEX_SIZE=48; // radius to vertex
+  const HEX_W = 2*HEX_SIZE;
+  const HEX_H = Math.sqrt(3)*HEX_SIZE;
+  const PADDING = 60; // around SVG
+  const TOP_MARGIN_ROWS = 1, BOTTOM_MARGIN_ROWS = 1;
+
+  // Vertex i angle: start at North (‑90°) and step 60° clockwise
+  function vertex(i){
+    // Flat-top orientation: vertices at 0°, 60°, 120°, 180°, 240°, 300°
+    const ang = i*(Math.PI/3);
+    return {x: HEX_SIZE*Math.cos(ang), y: HEX_SIZE*Math.sin(ang)};
+  }
+  // Edge index mapping for flat-top with 0=N,1=NE,2=SE,3=S,4=SW,5=NW
+  const EDGE_VERTEX_PAIRS = [
+    [1,2], // N (top)
+    [0,1], // NE
+    [5,0], // SE
+    [4,5], // S (bottom)
+    [3,4], // SW
+    [2,3]  // NW
+  ];
+  function edgeVerts(edge){
+    const idx = ((edge%6)+6)%6;
+    const [a,b] = EDGE_VERTEX_PAIRS[idx];
+    return [vertex(a), vertex(b)];
+  }
+  function edgeMid(edge){ const [a,b]=edgeVerts(edge); return {x:(a.x+b.x)/2, y:(a.y+b.y)/2}; }
+  function wedgeTri(edge){ const [a,b]=edgeVerts(edge); return {p0:{x:0,y:0}, p1:a, p2:b}; }
+  function hexPoints(){ const pts=[]; for(let i=0;i<6;i++){ const p=vertex(i); pts.push(p.x+","+p.y);} return pts.join(" "); }
+
+  // Dir labels for selects
+  const EDGE_LABELS=["0 N","1 NE","2 SE","3 S","4 SW","5 NW"];
+
+  // Colors (tweakable). OpenGround set to greener tone per visual sample.
+  const TERRAIN_COLORS={
+    OpenGround:'#e5f3cf', Woods:'#d7ead7', Building:'#efe6d6', Water:'#e6f0f8',
+    Marsh:'#e7efe7', Grain:'#f6efe0', Orchard:'#e9f6e6', Brush:'#e9efe6',
+    Road:'#efe9e1', Sand:'#fbf1df', Scrub:'#f4eddf', Hammada:'#f0e5d8'
+  };
+
+  // RNG helpers (deterministic per hex)
+  function strHash(s){let h=2166136261>>>0; for(let i=0;i<s.length;i++){ h^=s.charCodeAt(i); h=Math.imul(h,16777619);} return h>>>0;}
+  function mulberry32(seed){return function(){let t=seed+=0x6D2B79F5; t=Math.imul(t^t>>>15,t|1); t^=t+Math.imul(t^t>>>7,t|61); return ((t^t>>>14)>>>0)/4294967296;};}
+  const rngFromKey = key => mulberry32(strHash(key));
+  const lerp = (a,b,t)=>a+(b-a)*t;
+
+  // ======= State =======
+  let mapData={}; // { 'A1': HexData }
+  let selHex = null; // 'A1'
+
+  function defaultPlacements(){return [false,false,false,false,false,false];}
+  function createDefaultHex(){
+    return {
+      baseTerrain:'OpenGround',
+      elevations:[1,1,1,1,1,1], centerElevation:1,
+      features:{woods:false,building:false,brush:false,shellhole:false,orchard:false, placements:{woods:defaultPlacements().slice(), building:defaultPlacements().slice(), brush:defaultPlacements().slice(), shellhole:defaultPlacements().slice()}},
+      linear:{type:'', entry:'', exit:''},
+      hexside:{wall:'', hedge:''}
+    };
+  }
+  function ensurePlacements(h){ if(!h.features) h.features={}; if(!h.features.placements) h.features.placements={woods:defaultPlacements().slice(),building:defaultPlacements().slice(),brush:defaultPlacements().slice(),shellhole:defaultPlacements().slice()}; }
+
+  // ======= Grid math (flat‑top, odd‑q vertical layout) =======
+  function hexCenter(col,row){ // integer col,row starting at 0
+    const x = col*HEX_SIZE*1.5;
+    const y = row*HEX_H + (col%2)*HEX_H*0.5;
+    return {x: x+PADDING, y: y+PADDING + TOP_MARGIN_ROWS*HEX_H};
+  }
+
+  // ======= Rendering =======
+  function patternDefs(){
+    return `
+    <defs>
+      <pattern id="woodsPattern" x="0" y="0" width="20" height="20" patternUnits="userSpaceOnUse">
+        <circle cx="5" cy="5" r="3" fill="#2d5016" opacity="0.8"/>
+        <circle cx="5" cy="3" r="2" fill="#3d6b20" opacity="0.8"/>
+        <circle cx="15" cy="12" r="3" fill="#2d5016" opacity="0.8"/>
+        <circle cx="15" cy="10" r="2" fill="#3d6b20" opacity="0.8"/>
+        <circle cx="8" cy="18" r="3" fill="#2d5016" opacity="0.8"/>
+        <circle cx="8" cy="16" r="2" fill="#3d6b20" opacity="0.8"/>
+      </pattern>
+      <pattern id="orchardPattern" x="0" y="0" width="15" height="15" patternUnits="userSpaceOnUse">
+        <circle cx="7.5" cy="7.5" r="2" fill="#2d5016" opacity="0.6"/>
+        <circle cx="7.5" cy="7.5" r="1" fill="#3d6b20" opacity="0.8"/>
+      </pattern>
+      <pattern id="brushPattern" x="0" y="0" width="16" height="16" patternUnits="userSpaceOnUse">
+        <ellipse cx="4" cy="8" rx="3" ry="2" fill="#6b8e23" opacity="0.6"/>
+        <ellipse cx="12" cy="4" rx="2" ry="3" fill="#6b8e23" opacity="0.6"/>
+        <ellipse cx="10" cy="12" rx="3" ry="2" fill="#6b8e23" opacity="0.6"/>
+      </pattern>
+      <filter id="shadow"><feDropShadow dx="0" dy="1" stdDeviation="1" flood-color="#000" flood-opacity=".15"/></filter>
+    </defs>`;
+  }
+
+  function basePatternId(name){
+    switch(name){
+      case 'Woods': return 'woodsPattern';
+      case 'Orchard': return 'orchardPattern';
+      case 'Brush': return 'brushPattern';
+      case 'Grain': case 'Marsh': case 'Sand': case 'Scrub': default: return '';
+    }
+  }
+
+  function edgePath(edge){ const [a,b]=edgeVerts(edge); return `M ${a.x.toFixed(2)},${a.y.toFixed(2)} L ${b.x.toFixed(2)},${b.y.toFixed(2)}`; }
+
+  function renderHex(coord, h){
+    const id = `hex_${coord}`;
+    const c = centerByCoord(coord);
+    const base = TERRAIN_COLORS[h.baseTerrain] || '#e9e5d6';
+    const rng = rngFromKey(`hex:${coord}`);
+
+    let g = '';
+    g += `<g class="hex-click" data-hex="${coord}" transform="translate(${c.x},${c.y})">`;
+    g += `<polygon points="${hexPoints()}" fill="${base}" stroke="${getHexStroke(h)}" stroke-width="1" />`;
+
+    const pat = basePatternId(h.baseTerrain);
+    if(pat){ g += `<polygon points="${hexPoints()}" fill="url(#${pat})" opacity="0.9"/>`; }
+
+    // Scatter features per wedge
+    g += renderWoods(h, rng);
+    g += renderBrush(h, rng);
+    g += renderOrchard(h, rng);
+    g += renderBuildings(h, rng);
+    g += renderShellholes(h, rng);
+
+    // Linear
+    g += renderLinear(h);
+
+    // Hexside features
+    g += renderWall(h);
+    g += renderHedge(h);
+
+    // Coord label
+    g += `<text x="0" y="6" text-anchor="middle" font-size="10" fill="#475569">${coord}</text>`;
+
+    g += `</g>`;
+    return g;
+  }
+
+  function getHexStroke(h){ return '#d4d4d8'; }
+
+  function renderWoods(h, rng){ if(!h.features.woods) return '';
+    const mask = h.features.placements.woods || defaultPlacements();
+    const parts=[]; for(let i=0;i<6;i++){ if(!mask[i]) continue; const t=wedgeTri(i); const count=3+Math.floor(rng()*3);
+      for(let k=0;k<count;k++){ let u=rng(),v=rng(); if(u+v>1){u=1-u; v=1-v;} const w=1-u-v;
+        const x=w*t.p0.x+u*t.p1.x+v*t.p2.x, y=w*t.p0.y+u*t.p1.y+v*t.p2.y; const r=3+Math.random()*3;
+        parts.push(`<circle cx="${x.toFixed(2)}" cy="${y.toFixed(2)}" r="${r.toFixed(2)}" fill="url(#woodsPattern)" opacity="0.9"/>`);
+      }
+    } return `<g>${parts.join('')}</g>`; }
+
+  function renderOrchard(h, rng){ if(!h.features.orchard) return '';
+    // whole-hex light dot grid
+    const parts=[]; for(let i=0;i<22;i++){ const a=rng()*2*Math.PI; const r=HEX_SIZE*rng()*0.8; const x=r*Math.cos(a), y=r*Math.sin(a);
+      parts.push(`<circle cx="${x.toFixed(2)}" cy="${y.toFixed(2)}" r="${(1.6+rng()*1).toFixed(2)}" fill="url(#orchardPattern)" opacity="0.85"/>`);
+    } return `<g>${parts.join('')}</g>`; }
+
+  function renderBrush(h, rng){ if(!h.features.brush) return '';
+    const mask = h.features.placements.brush || defaultPlacements();
+    const parts=[]; for(let i=0;i<6;i++){ if(!mask[i]) continue; const t=wedgeTri(i); const n=2+Math.floor(rng()*3);
+      for(let k=0;k<n;k++){ let u=rng(),v=rng(); if(u+v>1){u=1-u; v=1-v;} const w=1-u-v; const x=w*t.p0.x+u*t.p1.x+v*t.p2.x; const y=w*t.p0.y+u*t.p1.y+v*t.p2.y; const rx=5+rng()*5, ry=3+rng()*4;
+        parts.push(`<ellipse cx="${x.toFixed(2)}" cy="${y.toFixed(2)}" rx="${rx.toFixed(2)}" ry="${ry.toFixed(2)}" fill="url(#brushPattern)" opacity="0.8"/>`);
+      }
+    } return `<g>${parts.join('')}</g>`; }
+
+  function renderBuildings(h, rng){ if(!h.features.building) return '';
+    const mask = h.features.placements.building || defaultPlacements();
+    const parts=[]; for(let i=0;i<6;i++){ if(!mask[i]) continue; const t=wedgeTri(i);
+      // one small footprint per wedge
+      let u=rng(),v=rng(); if(u+v>1){u=1-u; v=1-v;} const w=1-u-v; // bias toward center
+      const centerBias=.35; const uvSum=(u+v)||1; u=(u/uvSum)*(1-centerBias); v=(v/uvSum)*(1-centerBias); const W=centerBias;
+      const x=W*t.p0.x+u*t.p1.x+v*t.p2.x, y=W*t.p0.y+u*t.p1.y+v*t.p2.y;
+      const s=.8+.5*rng(); const bw=18*s, bh=12*s; const ang=(rng()*360|0);
+      parts.push(`<g transform="translate(${x.toFixed(2)},${y.toFixed(2)}) rotate(${ang})">
+        <rect x="${(-bw/2).toFixed(2)}" y="${(-bh/2).toFixed(2)}" width="${bw.toFixed(2)}" height="${bh.toFixed(2)}" fill="#8b7355" stroke="#000" stroke-width="1"/>
+        <line x1="${(-bw/2).toFixed(2)}" y1="${(-bh/2).toFixed(2)}" x2="${(bw/2).toFixed(2)}" y2="${(-bh/2).toFixed(2)}" stroke="#4f3c2a" stroke-width="1"/>
+      </g>`);
+    } return `<g>${parts.join('')}</g>`; }
+
+  function renderShellholes(h, rng){ if(!h.features.shellhole) return '';
+    const mask=h.features.placements.shellhole||defaultPlacements(); const parts=[];
+    for(let i=0;i<6;i++){ if(!mask[i]) continue; const t=wedgeTri(i); let u=rng(),v=rng(); if(u+v>1){u=1-u; v=1-v;} const w=1-u-v; const x=w*t.p0.x+u*t.p1.x+v*t.p2.x; const y=w*t.p0.y+u*t.p1.y+v*t.p2.y; const R=8+rng()*6;
+      parts.push(`<circle cx="${x.toFixed(2)}" cy="${y.toFixed(2)}" r="${(R*0.85).toFixed(2)}" fill="#7f5a3a" opacity="0.35"/>
+                  <circle cx="${x.toFixed(2)}" cy="${y.toFixed(2)}" r="${R.toFixed(2)}" fill="none" stroke="#5a3d25" stroke-width="1" opacity="0.7"/>`);
+    } return `<g>${parts.join('')}</g>`; }
+
+  function renderLinear(h){ if(!h.linear || !h.linear.type) return '';
+    const entry = h.linear.entry, exit = h.linear.exit;
+    if(entry==='' || exit==='') return '';
+    const m1 = edgeMid(parseInt(entry)), m2 = edgeMid(parseInt(exit));
+    const stroke = h.linear.type==='Road'? '#6b4f1d' : (h.linear.type==='Stream'? '#4a8dd8' : '#444');
+    const width = h.linear.type==='Road'? 6 : (h.linear.type==='Stream'? 4 : 3);
+    return `<path d="M ${m1.x.toFixed(2)},${m1.y.toFixed(2)} L 0,0 L ${m2.x.toFixed(2)},${m2.y.toFixed(2)}" fill="none" stroke="${stroke}" stroke-width="${width}" stroke-linecap="round" stroke-linejoin="round" opacity="0.95"/>`;
+  }
+
+  function renderWall(h){ const e = h.hexside.wall; if(e===''&&e!==0) return ''; const d=edgePath(parseInt(e)); return `<g><path d="${d}" fill="none" stroke="#5f5f64" stroke-width="5" stroke-linecap="round" opacity="0.95"/><path d="${d}" fill="none" stroke="#bfc2c7" stroke-width="2.5" stroke-linecap="round" opacity="0.85"/></g>`; }
+  function renderHedge(h){ const e = h.hexside.hedge; if(e===''&&e!==0) return ''; const d=edgePath(parseInt(e)); return `<g><path d="${d}" fill="none" stroke="#2e5d2c" stroke-width="5" stroke-linecap="round" opacity="0.9"/><path d="${d}" fill="none" stroke="#6bb06a" stroke-width="3" stroke-linecap="round" opacity="0.9" stroke-dasharray="1.5 1.2"/></g>`; }
+
+  // ======= Map render =======
+  function renderMap(){
+    const dims = getDims();
+    const cols=dims.cols, rows=dims.rows; // logical map size
+    const totalRows = rows + TOP_MARGIN_ROWS + BOTTOM_MARGIN_ROWS;
+    const width  = (cols-1)*HEX_SIZE*1.5 + HEX_W + PADDING*2;
+    const height = totalRows*HEX_H + HEX_H*0.5 + PADDING*2;
+
+    let svg = `<svg width="${width}" height="${height}" xmlns="http://www.w3.org/2000/svg" style="background:#fff">`;
+    svg += patternDefs();
+
+    for(let r=0;r<rows;r++){
+      for(let c=0;c<cols;c++){
+        const coord = toCoord(c,r);
+        if(!mapData[coord]) mapData[coord]=createDefaultHex();
+        svg += renderHex(coord, mapData[coord]);
+      }
+    }
+    svg += `</svg>`;
+    document.getElementById('mapHost').innerHTML = svg;
+
+    // hook clicks
+    document.querySelectorAll('.hex-click').forEach(g=>g.addEventListener('click',()=>selectHex(g.dataset.hex)));
+  }
+
+  // ======= Coord helpers =======
+  function toCoord(col,row){ // A1, B1 ... using letters for columns (A..)
+    return String.fromCharCode(65+col) + (row+1);
+  }
+  function fromCoord(coord){
+    const col = coord.charCodeAt(0)-65;
+    const row = parseInt(coord.slice(1),10)-1;
+    return {col,row};
+  }
+  function centerByCoord(coord){ const {col,row}=fromCoord(coord); return hexCenter(col,row); }
+
+  function getDims(){
+    const val = document.getElementById('mapSize').value;
+    const n = (val==='single')?1:parseInt(val,10);
+    return {cols:n, rows:n};
+  }
+
+  // ======= Selection & UI sync =======
+  function mountEdgeOptions(sel){ sel.innerHTML=''; EDGE_LABELS.forEach((l,i)=>{ const op=document.createElement('option'); op.value=String(i); op.textContent=l; sel.appendChild(op); }); const term=document.createElement('option'); term.value=''; term.textContent='(none)'; sel.appendChild(term); }
+
+  function selectHex(coord){ selHex = coord; ensurePlacements(mapData[coord]);
+    document.getElementById('selHex').textContent = `Editing Hex: ${coord}`;
+    document.getElementById('hexControls').style.display='block';
+
+    const h = mapData[coord];
+    document.getElementById('baseTerrain').value = h.baseTerrain;
+    for(let i=0;i<6;i++){ document.getElementById('elev'+i).value = h.elevations[i]; }
+    document.getElementById('centerElev').value = h.centerElevation;
+
+    document.getElementById('chkWoods').checked = h.features.woods;
+    document.getElementById('chkBuilding').checked = h.features.building;
+    document.getElementById('chkBrush').checked = h.features.brush;
+    document.getElementById('chkShellhole').checked = h.features.shellhole;
+    document.getElementById('chkOrchard').checked = h.features.orchard;
+
+    mountWedge('picker-woods','woods');
+    mountWedge('picker-building','building');
+    mountWedge('picker-brush','brush');
+    mountWedge('picker-shellhole','shellhole');
+
+    // Linear
+    document.getElementById('linearType').value = h.linear.type || '';
+    document.getElementById('entryEdge').value = h.linear.entry!==undefined?h.linear.entry:'';
+    document.getElementById('exitEdge').value  = h.linear.exit!==undefined?h.linear.exit:'';
+
+    // Hexside
+    document.getElementById('wallEdge').value  = h.hexside.wall!==undefined?h.hexside.wall:'';
+    document.getElementById('hedgeEdge').value = h.hexside.hedge!==undefined?h.hexside.hedge:'';
+  }
+
+  function updateSelected(){ if(!selHex) return; const h=mapData[selHex];
+    h.baseTerrain = document.getElementById('baseTerrain').value;
+    for(let i=0;i<6;i++){ h.elevations[i] = parseFloat(document.getElementById('elev'+i).value||'0'); }
+    h.centerElevation = parseFloat(document.getElementById('centerElev').value||'0');
+
+    h.features.woods     = document.getElementById('chkWoods').checked;
+    h.features.building  = document.getElementById('chkBuilding').checked;
+    h.features.brush     = document.getElementById('chkBrush').checked;
+    h.features.shellhole = document.getElementById('chkShellhole').checked;
+    h.features.orchard   = document.getElementById('chkOrchard').checked;
+
+    h.linear.type  = document.getElementById('linearType').value;
+    h.linear.entry = document.getElementById('entryEdge').value;
+    h.linear.exit  = document.getElementById('exitEdge').value;
+
+    h.hexside.wall  = document.getElementById('wallEdge').value;
+    h.hexside.hedge = document.getElementById('hedgeEdge').value;
+
+    renderMap(); selectHex(selHex);
+  }
+
+  // ======= Wedge picker =======
+  function mountWedge(hostId, key){
+    const host = document.getElementById(hostId);
+    const h = mapData[selHex]; const mask = h.features.placements[key]; const disabled = !h.features[key] && key!=='building';
+    host.innerHTML = `<svg viewBox="-56 -48 112 96" class="wedge-picker" data-tint="${key}"></svg>`;
+    const svg = host.querySelector('svg');
+    for(let i=0;i<6;i++){
+      const t = wedgeTri(i);
+      const d = `M ${t.p0.x},${t.p0.y} L ${t.p1.x},${t.p1.y} L ${t.p2.x},${t.p2.y} Z`;
+      const p = document.createElementNS('http://www.w3.org/2000/svg','path');
+      p.setAttribute('d', d); p.setAttribute('class','wedge'+(mask[i]?' selected':'')); p.dataset.idx=String(i);
+      if(disabled){ p.style.opacity='.4'; p.style.pointerEvents='none'; }
+      p.addEventListener('click',()=>{ mask[i]=!mask[i]; renderMap(); selectHex(selHex); });
+      svg.appendChild(p);
+    }
+  }
+
+  // ======= JSON import/export =======
+  function exportJson(){
+    const out = { map:{ size:getDims(), data:mapData } };
+    const blob = new Blob([JSON.stringify(out,null,2)], {type:'application/json'});
+    const a = document.createElement('a'); a.href=URL.createObjectURL(blob); a.download='asl-map.json'; a.click(); URL.revokeObjectURL(a.href);
+  }
+
+  function loadJsonText(txt){
+    try{
+      const j = JSON.parse(txt);
+      // Two supported shapes: our simple {map:{size:{cols,rows},data:{A1:{...}}}} or author spec (board sample)
+      if(j.map && j.map.size && j.map.data){
+        // direct shape
+        document.getElementById('mapSize').value = String(j.map.size.cols||1);
+        mapData = j.map.data; renderMap(); return;
+      }
+      // Attempt to parse "asl_board_1_sample_9x9_roads_N0_from_author.json"-style
+      if(j.map && j.map.dimensions){
+        const w = j.map.dimensions.width|0, h = j.map.dimensions.height|0; if(w===h && (w===3||w===5||w===7||w===9)){
+          document.getElementById('mapSize').value = String(w);
+        } else { document.getElementById('mapSize').value = '9'; }
+        mapData = {}; // fill defaults
+        renderMap();
+        // place hex templates
+        const defaultTemplate = (j.hexTemplates && j.hexTemplates[j.map.defaultTemplateId])? j.hexTemplates[j.map.defaultTemplateId] : {baseTerrain:'openGround'};
+        // Start with defaults
+        const dims=getDims(); for(let r=0;r<dims.rows;r++){ for(let c=0;c<dims.cols;c++){ mapData[toCoord(c,r)] = createDefaultHex(); mapData[toCoord(c,r)].baseTerrain = mapTemplateBase(defaultTemplate.baseTerrain); }}
+        // Apply individual hexes
+        if(Array.isArray(j.map.individualHexes)){
+          for(const hh of j.map.individualHexes){
+            const coord = normalizeHexId(hh.hexId);
+            if(!mapData[coord]) mapData[coord]=createDefaultHex();
+            const tpl = j.hexTemplates[hh.templateId];
+            if(tpl){ mapData[coord].baseTerrain = mapTemplateBase(tpl.baseTerrain); }
+          }
+        }
+        renderMap();
+        return;
+      }
+      alert('JSON parsed but shape not recognized.');
+    }catch(e){ alert('Failed to parse JSON: '+e.message); }
+  }
+
+  function mapTemplateBase(s){
+    // normalize author template base names to our spelling
+    if(!s) return 'OpenGround';
+    const k = String(s).toLowerCase();
+    if(k.includes('open')) return 'OpenGround';
+    if(k.includes('wood')) return 'Woods';
+    return 'OpenGround';
+  }
+
+  function normalizeHexId(hexId){
+    // Accept forms like "1B3" => remove leading digits and keep letter+number e.g., B3
+    const m = String(hexId).match(/[A-Za-z]+\d+/);
+    if(!m) return 'A1';
+    const s = m[0];
+    // If multi-letter columns (AA10), support first letter only for now
+    const colLetter = s.match(/[A-Za-z]+/)[0].toUpperCase();
+    const rowNum = parseInt(s.match(/\d+/)[0],10);
+    const colIndex = colLetter.charCodeAt(0)-65; // A->0
+    return String.fromCharCode(65+colIndex) + rowNum; // B3 style
+  }
+
+  // ======= Init & events =======
+  function newMap(){ mapData={}; selHex=null; document.getElementById('selHex').textContent='Click a hex to edit'; renderMap(); }
+
+  function init(){
+    // mount selects
+    ['entryEdge','exitEdge','wallEdge','hedgeEdge'].forEach(id=>mountEdgeOptions(document.getElementById(id)));
+
+    document.getElementById('mapSize').addEventListener('change', newMap);
+    document.getElementById('btnNew').addEventListener('click', newMap);
+    document.getElementById('btnExport').addEventListener('click', exportJson);
+
+    // JSON load
+    document.getElementById('jsonFile').addEventListener('change', ev=>{
+      const f = ev.target.files[0]; if(!f) return; const fr=new FileReader(); fr.onload=()=>loadJsonText(fr.result); fr.readAsText(f);
+    });
+
+    // Hex control changes
+    ['baseTerrain','centerElev','linearType','entryEdge','exitEdge','wallEdge','hedgeEdge'].forEach(id=>document.getElementById(id).addEventListener('change', updateSelected));
+    ['elev0','elev1','elev2','elev3','elev4','elev5'].forEach(id=>document.getElementById(id).addEventListener('change', updateSelected));
+    ['chkWoods','chkBuilding','chkBrush','chkShellhole','chkOrchard'].forEach(id=>document.getElementById(id).addEventListener('change', updateSelected));
+
+    // All/None wedge buttons (event delegation)
+    document.querySelectorAll('.wedge-actions .mini').forEach(btn=>{
+      btn.addEventListener('click',()=>{
+        if(!selHex) return; const h=mapData[selHex]; const key=btn.dataset.all||btn.dataset.none; const on = !!btn.dataset.all;
+        h.features.placements[key] = [on,on,on,on,on,on];
+        renderMap(); selectHex(selHex);
+      });
+    });
+
+    newMap();
+  }
+
+  window.addEventListener('DOMContentLoaded', init);
+})();
+</script>
+</body>
+</html>

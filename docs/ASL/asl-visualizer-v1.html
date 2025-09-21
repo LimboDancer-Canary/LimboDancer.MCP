@@ -1,0 +1,283 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>ASL Board Visualizer v2.7 (Flat‑Top, N=0)</title>
+<style>
+  :root { --bg:#f7f7f9; --panel:#fff; --ink:#111; --muted:#6b7280; --accent:#4e6cff; }
+  * { box-sizing:border-box; }
+  body { margin:0; font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial; background:var(--bg); color:var(--ink); }
+  header { padding:16px 20px 8px; }
+  header h1 { margin:0 0 4px; font-size:20px; }
+  .sub { color:var(--muted); font-size:13px; }
+  .wrap { padding: 0 20px 20px; display:grid; grid-template-columns: 360px 1fr; gap:16px; }
+  .card { background:var(--panel); border-radius:12px; box-shadow:0 6px 18px rgba(0,0,0,.06); overflow:hidden; }
+  .card h2 { margin:0; padding:10px 12px; font-size:14px; background:#fafbfc; border-bottom:1px solid #eef0f3; }
+  .card .body { padding:12px; }
+  .row { display:flex; gap:8px; align-items:center; }
+  textarea { width:100%; min-height:180px; font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas; font-size:12px; padding:8px; border:1px solid #e5e7eb; border-radius:8px; resize:vertical; }
+  .btn { background:var(--accent); color:#fff; border:0; border-radius:10px; padding:10px 12px; font-weight:600; cursor:pointer; }
+  .btn.secondary { background:#e5e7eb; color:#111; }
+  #stage { width:100%; height: calc(100vh - 200px); min-height:520px; background:#edf2f7; border-radius:10px; display:flex; align-items:center; justify-content:center; color:#6b7280; }
+  svg { width:100%; height:100%; display:block; }
+  code { background:#eef2ff; padding:1px 6px; border-radius:6px; }
+</style>
+</head>
+<body>
+<header>
+  <h1>ASL Board Visualizer <small style="font-weight:600;">(Flat‑Top, N=0)</small></h1>
+  <div class="sub">Loads external JSON. Edge indexing defaults to <code>["N","NE","SE","S","SW","NW"]</code> with <code>zeroAt:"N"</code>.</div>
+</header>
+
+<div class="wrap">
+  <div class="card">
+    <h2>Load JSON</h2>
+    <div class="body">
+      <div class="row">
+        <input type="file" id="file" accept=".json"/>
+        <button class="btn secondary" id="btn-load">Load File</button>
+      </div>
+      <textarea id="json" placeholder="Paste your ASL JSON here..."></textarea>
+      <div class="row">
+        <button class="btn" id="btn-render">Render JSON</button>
+        <button class="btn secondary" id="btn-clear">Clear</button>
+      </div>
+      <div id="msg" style="color:#b91c1c; font-size:12px; display:none; margin-top:8px;"></div>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>Display</h2>
+    <div class="body">
+      <label><input type="checkbox" id="toggle-roads" checked/> Show roads</label><br/>
+      <label><input type="checkbox" id="toggle-labels" checked/> Show hex labels</label><br/>
+      <label><input type="checkbox" id="toggle-grid" checked/> Outline hexes</label>
+    </div>
+  </div>
+
+  <div class="card" style="grid-column: 1 / -1;">
+    <h2>Board</h2>
+    <div class="body"><div id="stage">Load or paste JSON, then click <b>Render JSON</b>.</div></div>
+  </div>
+</div>
+
+<script>
+(function(){
+  // ----- Geometry for FLAT‑TOP hexes (N=0) -----
+  const HEX_SIZE = 30;
+  const HEX_H = Math.sqrt(3) * HEX_SIZE;
+  const APOTHEM = HEX_SIZE * Math.cos(Math.PI/6);
+
+  function colLettersToIndex(letters){ let c=0; for(let i=0;i<letters.length;i++) c=c*26+(letters.charCodeAt(i)-64); return c-1; }
+  function parseCoord(id){ const m=String(id).trim().match(/^1?([A-Z]+)(\d+)$/); if(!m) return null; return {c:colLettersToIndex(m[1]), r:parseInt(m[2],10)-1}; }
+  function letters(c){ return c<26?String.fromCharCode(65+c):('A'+String.fromCharCode(65+(c-26))); }
+  function cid(c,r){ return '1'+letters(c)+(r+1); }
+  function hexPos(c,r){ return { x: c*HEX_SIZE*1.5 + 80, y: r*HEX_H + (c%2)*(HEX_H*0.5) + 80 }; }
+
+  // N=0 indexing for edge midpoints (flat‑top)
+  const EDGE_ANGLE = { N:3*Math.PI/2, NE:11*Math.PI/6, SE:Math.PI/6, S:Math.PI/2, SW:5*Math.PI/6, NW:7*Math.PI/6 };
+  function edgeVec(name){ const a=EDGE_ANGLE[name]; return {x:APOTHEM*Math.cos(a), y:APOTHEM*Math.sin(a)}; }
+
+  function hexPolygon(){ const pts=[]; for(let i=0;i<6;i++){ const a=(Math.PI/3)*i; pts.push((HEX_SIZE*Math.cos(a)).toFixed(3)+','+(HEX_SIZE*Math.sin(a)).toFixed(3)); } return pts.join(' '); }
+
+  // Road curves (graceful and stitched across edges)
+  const RAD=Math.PI/180;
+  const ORDER_DEFAULT = ["N","NE","SE","S","SW","NW"];
+  function orderFromJSON(data){ return data?.map?.renderHints?.sideIndexing?.orderClockwise || ORDER_DEFAULT; }
+  function idxOf(name,order){ return order.indexOf(name); }
+  function nameOf(idx,order){ return order[((idx%6)+6)%6]; }
+  function oppIdx(i){ return (i+3)%6; }
+  function norm(a){ while(a<=-Math.PI)a+=2*Math.PI; while(a>Math.PI)a-=2*Math.PI; return a; }
+  function midAng(a,b){ const d=norm(b-a); return a+d/2; }
+  function rot(theta,r){ return {x:r*Math.cos(theta), y:r*Math.sin(theta)}; }
+  function scale(p,k){ return {x:p.x*k, y:p.y*k}; }
+
+  function roadPath(pIn,pOut,enterName,exitName,order){
+    const t1=1.02, t2=1.02; // overlap to stitch
+    const aIn=EDGE_ANGLE[enterName], aOut=exitName?EDGE_ANGLE[exitName]:null;
+    const P1=scale(pIn,t1);
+    const P2=exitName?scale(pOut,t2):{x:0,y:0};
+    if(!exitName){
+      const inward={x:-Math.cos(aIn), y:-Math.sin(aIn)};
+      const C={x:P1.x+inward.x*HEX_SIZE*0.55, y:P1.y+inward.y*HEX_SIZE*0.55};
+      return `M ${P1.x} ${P1.y} Q ${C.x} ${C.y} 0 0`;
+    }
+    const di=((idxOf(exitName,order)-idxOf(enterName,order))%6+6)%6;
+    if(di===1||di===5){
+      // Adjacent edges - curve through a control point offset from center
+      const midAngle = midAng(aIn,aOut);
+      const C=rot(midAngle, HEX_SIZE*0.35);
+      return `M ${P1.x} ${P1.y} Q ${C.x} ${C.y} ${P2.x} ${P2.y}`;
+    }else if(di===2||di===4){
+      // Two edges apart - curve through center
+      return `M ${P1.x} ${P1.y} Q 0 0 ${P2.x} ${P2.y}`;
+    }else{
+      // Opposite edges - slight curve through center
+      const vx=P2.x-P1.x, vy=P2.y-P1.y;
+      const perpX=-vy*0.15, perpY=vx*0.15; // Small perpendicular offset
+      const C={x:perpX, y:perpY};
+      return `M ${P1.x} ${P1.y} Q ${C.x} ${C.y} ${P2.x} ${P2.y}`;
+    }
+  }
+
+  function fillFor(t){
+    if(!t) return '#90a955';
+    if(t.baseTerrain==='woods') return 'url(#woods)';
+    if(t.building){
+      const b=t.building;
+      if(b.type==='stone'&&b.levels===2) return 'url(#stone2)';
+      if(b.type==='stone'&&b.levels===1) return 'url(#stone1)';
+      if(b.type==='wooden') return 'url(#wood)';
+    }
+    return '#90a955';
+  }
+
+  function svgDefs(){
+    return `<defs>
+      <pattern id="woods" width="20" height="20" patternUnits="userSpaceOnUse">
+        <rect width="20" height="20" fill="#2d5016"/>
+        <circle cx="5" cy="5" r="3" fill="#1a3009" opacity="0.6"/>
+        <circle cx="15" cy="10" r="2.5" fill="#1a3009" opacity="0.5"/>
+        <circle cx="8" cy="15" r="3.5" fill="#1a3009" opacity="0.7"/>
+      </pattern>
+      <pattern id="stone2" width="10" height="10" patternUnits="userSpaceOnUse">
+        <rect width="10" height="10" fill="#8b7d6b"/>
+        <rect x="0" y="0" width="10" height="2" fill="#5c5248"/>
+        <rect x="0" y="5" width="10" height="2" fill="#5c5248"/>
+      </pattern>
+      <pattern id="stone1" width="10" height="10" patternUnits="userSpaceOnUse">
+        <rect width="10" height="10" fill="#a0937f"/>
+        <line x1="0" y1="5" x2="10" y2="5" stroke="#7a6e5c" stroke-width="1"/>
+      </pattern>
+      <pattern id="wood" width="8" height="8" patternUnits="userSpaceOnUse">
+        <rect width="8" height="8" fill="#8b6914"/>
+        <line x1="0" y1="0" x2="0" y2="8" stroke="#654b0e" stroke-width="0.5"/>
+        <line x1="4" y1="0" x2="4" y2="8" stroke="#654b0e" stroke-width="0.5"/>
+      </pattern>
+    </defs>`;
+  }
+
+  const stage = document.getElementById('stage');
+  const msg = document.getElementById('msg');
+
+  function draw(data){
+    try{
+      msg.style.display='none';
+      const showRoads = document.getElementById('toggle-roads').checked;
+      const showLabels= document.getElementById('toggle-labels').checked;
+      const showGrid  = document.getElementById('toggle-grid').checked;
+
+      const W=+data?.map?.dimensions?.width, H=+data?.map?.dimensions?.height;
+      if(!Number.isFinite(W)||!Number.isFinite(H)) throw new Error("Missing map.dimensions width/height.");
+      const defaultId=data?.map?.defaultTemplateId;
+      const defaultT=data?.hexTemplates?.[defaultId];
+      if(!defaultT) throw new Error("defaultTemplateId not found in hexTemplates.");
+
+      const order = orderFromJSON(data);
+
+      const padX=160, padY=120;
+      const svgW = Math.max(padX + W*HEX_SIZE*1.6, 900);
+      const svgH = Math.max(padY + H*HEX_H + HEX_H, 640);
+      let svg = `<svg viewBox="0 0 ${svgW} ${svgH}" xmlns="http://www.w3.org/2000/svg">`;
+      svg += `<rect width="${svgW}" height="${svgH}" fill="#e9edf3"/>`;
+      svg += svgDefs();
+      svg += `<text x="${svgW/2}" y="28" text-anchor="middle" font-size="18" font-weight="600">ASL Board – Generated from JSON</text>`;
+
+      // Add legend
+      const legendX = svgW - 180;
+      const legendY = 60;
+      const legendItemHeight = 35;
+      
+      svg += `<g id="legend">`;
+      svg += `<text x="${legendX}" y="${legendY}" font-size="16" font-weight="600">Map Legend</text>`;
+      
+      // Legend items
+      const legendItems = [
+        { fill: '#90a955', stroke: '#333', label: 'Open Ground' },
+        { fill: 'url(#woods)', stroke: '#333', label: 'Woods' },
+        { fill: 'url(#stone2)', stroke: '#333', label: 'Stone Building (2 levels)' },
+        { fill: 'url(#stone1)', stroke: '#333', label: 'Stone Building (1 level)' },
+        { fill: 'url(#wood)', stroke: '#333', label: 'Wooden Building' }
+      ];
+      
+      legendItems.forEach((item, i) => {
+        const y = legendY + 30 + (i * legendItemHeight);
+        svg += `<g transform="translate(${legendX},${y})">`;
+        svg += `<polygon points="${hexPolygon()}" fill="${item.fill}" stroke="${item.stroke}" stroke-width="0.7" transform="scale(0.6)"/>`;
+        svg += `<text x="25" y="4" font-size="12">${item.label}</text>`;
+        svg += `</g>`;
+      });
+      
+      svg += `</g>`;
+
+      // Build base map
+      const hexes=new Map();
+      for(let r=0;r<H;r++){ for(let c=0;c<W;c++){ const id=cid(c,r); hexes.set(id,{id,template:defaultT,overrides:{}});}}
+      // Merge individual hexes
+      for(const h of (data?.map?.individualHexes||[])){
+        const t=data?.hexTemplates?.[h.templateId]; if(!t) continue;
+        hexes.set(h.hexId,{id:h.hexId, template:t, overrides:h.overrides||{}});
+      }
+
+      // Render
+      hexes.forEach(hex => {
+        const cr=parseCoord(hex.id); if(!cr) return;
+        const p=hexPos(cr.c,cr.r);
+        const fill=fillFor(hex.template);
+        const stroke=showGrid ? "#333" : "transparent";
+        const sw=showGrid?0.7:0;
+        svg += `<g transform="translate(${p.x},${p.y})">`;
+        svg += `<polygon points="${hexPolygon()}" fill="${fill}" stroke="${stroke}" stroke-width="${sw}"/>`;
+
+        if(showLabels){
+          const labelColor = (hex.template.baseTerrain==='woods') ? '#fff' : '#111';
+          svg += `<text x="0" y="4" text-anchor="middle" font-size="8" fill="${labelColor}">${hex.id.replace(/^1/,'')}</text>`;
+        }
+
+        if(showRoads){
+          const raw = hex.overrides;
+          const feats = Array.isArray(raw) ? raw : ((raw&&raw.linearTraversals)||[]);
+          for(const t of feats){
+            if(t.type!=='road') continue;
+            const enterName = order[((t.enters%6)+6)%6];
+            const p1=edgeVec(enterName);
+            let d;
+            if(t.exits!==null && t.exits!==undefined){
+              const exitName = order[((t.exits%6)+6)%6];
+              const p2=edgeVec(exitName);
+              d = roadPath(p1,p2,enterName,exitName,order);
+            }else{
+              d = roadPath(p1,null,enterName,null,order);
+            }
+            svg += `<path d="${d}" fill="none" stroke="#666" stroke-width="4" stroke-linecap="round" stroke-linejoin="round" opacity=".85"/>`;
+            svg += `<path d="${d}" fill="none" stroke="#c8c8c8" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/>`;
+          }
+        }
+
+        svg += `</g>`;
+      });
+
+      svg += `</svg>`;
+      stage.innerHTML = svg;
+    }catch(e){
+      msg.textContent = e.message||String(e); msg.style.display='block';
+    }
+  }
+
+  // UI
+  document.getElementById('btn-render').addEventListener('click', ()=>{
+    try{ const d=JSON.parse(document.getElementById('json').value); draw(d); }catch(e){ msg.textContent=e.message||String(e); msg.style.display='block'; }
+  });
+  document.getElementById('btn-load').addEventListener('click', async ()=>{
+    const f=document.getElementById('file').files?.[0]; if(!f){ msg.textContent='Choose a .json file first.'; msg.style.display='block'; return; }
+    const text=await f.text(); document.getElementById('json').value=text; try{ draw(JSON.parse(text)); }catch(e){ msg.textContent=e.message||String(e); msg.style.display='block'; }
+  });
+  document.getElementById('btn-clear').addEventListener('click', ()=>{ document.getElementById('json').value=''; stage.textContent='Load or paste JSON, then click Render JSON.'; msg.style.display='none'; });
+
+  ['toggle-roads','toggle-labels','toggle-grid'].forEach(id => {
+    const el=document.getElementById(id); el.addEventListener('change', ()=>{ try{ const d=JSON.parse(document.getElementById('json').value); draw(d);}catch{} });
+  });
+})();</script>
+</body>
+</html>
