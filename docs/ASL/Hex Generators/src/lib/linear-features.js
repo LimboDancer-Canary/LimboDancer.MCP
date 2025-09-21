@@ -1,13 +1,73 @@
 // lib/linear-features.js
-// Linear features (roads/streams/rails) that "stitch" across hex borders.
-// Works with flat-top hexes (N=0 side indexing: ["N","NE","SE","S","SW","NW"]).
+// Linear features (roads/paths/rails/streams) that "stitch" across hex borders.
+// Works with flat-top hexes and 0=N side indexing: ["N","NE","SE","S","SW","NW"].
 //
-// IMPORTANT: All geometry here is in LOCAL hex coordinates (center at 0,0).
+// IMPORTANT: All geometry here is LOCAL to the hex (center at 0,0).
 // When rendering, wrap the path(s) in a <g transform="translate(cx,cy)">…</g>.
 
 /* eslint-disable no-mixed-operators */
 
 import { EDGE_ANGLE, SIDE_ORDER, idxOf, apothem } from './hex-geom.js';
+import { edgeName } from './schema.js';
+
+/////////////////////////
+// Shared "model" bits //
+/////////////////////////
+
+/** Canonical kinds for traversals. */
+export const LinearKinds = Object.freeze({
+  road:   'road',
+  path:   'path',
+  rail:   'rail',
+  stream: 'stream',
+});
+
+/**
+ * Minimal registry (extensible) for feature defaults/styling tokens.
+ * Renderers can consult this without hard-coding.
+ */
+export const LinearRegistry = {
+  [LinearKinds.road]:   { strokeBase: '#666', strokeTop: '#c8c8c8', widthBase: 4, widthTop: 2.4 },
+  [LinearKinds.path]:   { strokeBase: '#6b6b6b', strokeTop: '#dedede', widthBase: 2.5, widthTop: 1.3, dashed: '4 3' },
+  [LinearKinds.rail]:   { strokeBase: '#2e2e2e', strokeTop: '#f6f6f6', widthBase: 3.6, widthTop: 1.0, sleepersEvery: 10 },
+  [LinearKinds.stream]: { strokeBase: '#2a6faa', strokeTop: '#7fb3e0', widthBase: 3.6, widthTop: 2.0 },
+};
+
+/**
+ * Normalize a traversal-like object → { kind, enters, exits } where
+ * enters/exits are SIDE NAMES per `order` (numbers or strings accepted).
+ *
+ * Supported shapes:
+ *  - { type:'road'|'path'|'rail'|'stream', enters:<name|index>, exits:<name|index|null> }
+ *  - { kind:'road', ... } (alias for type)
+ *  - { enters, exits } (kind defaults to 'road')
+ *  - legacy:
+ *      template.linearFeature = { entryEdge, exitEdge }
+ *      template.road          = { entryEdge, exitEdge }
+ *
+ * @param {any} obj
+ * @param {string[]} [order=SIDE_ORDER]
+ * @returns {{ kind:string, enters:string|null, exits:string|null }}
+ */
+export function normalizeTraversal(obj, order = SIDE_ORDER) {
+  const kind = (obj?.kind || obj?.type || LinearKinds.road).toString().toLowerCase();
+  // Accept various field names
+  const entersRaw = obj?.enters ?? obj?.entryEdge;
+  const exitsRaw  = obj?.exits  ?? obj?.exitEdge;
+
+  const enters = edgeName(entersRaw, order);
+  const exits  = edgeName(exitsRaw,  order);
+
+  return { kind, enters, exits };
+}
+
+/**
+ * Convenience to build a stable key for a traversal inside a hex.
+ * @param {{kind:string, enters:string|null, exits:string|null}} t
+ */
+export function traversalKey(t) {
+  return `${t.kind}:${t.enters ?? '∅'}>${t.exits ?? '∅'}`;
+}
 
 /////////////////////////
 // Small math helpers  //
@@ -57,9 +117,22 @@ function edgeVec(side, size) {
  * @returns {{enter:{x:number,y:number}, exit?:{x:number,y:number}}}
  */
 export function midpointsFromSides(enterName, exitName, size) {
-  const enter = edgeVec(enterName, size);
+  const enter = enterName ? edgeVec(enterName, size) : undefined;
   const exit  = exitName ? edgeVec(exitName, size) : undefined;
   return { enter, exit };
+}
+
+/**
+ * Like midpointsFromSides but from a traversal-like object.
+ * @param {{enters:any, exits:any}} traversal
+ * @param {number} size
+ * @param {string[]} [order=SIDE_ORDER]
+ * @returns {{enter:{x:number,y:number}|undefined, exit?:{x:number,y:number}|undefined, entersName:string|null, exitsName:string|null}}
+ */
+export function midpointsFromTraversal(traversal, size, order = SIDE_ORDER) {
+  const t = normalizeTraversal(traversal, order);
+  const m = midpointsFromSides(t.enters, t.exits, size);
+  return { ...m, entersName: t.enters, exitsName: t.exits };
 }
 
 /////////////////////////////
@@ -68,8 +141,8 @@ export function midpointsFromSides(enterName, exitName, size) {
 
 /**
  * Build an SVG path `d` for a through-hex linear feature (e.g., road).
- * The path is created in LOCAL hex coordinates. For seamless stitching across
- * adjacent hexes, it slightly overhangs past the apothem.
+ * Path is LOCAL to the hex. For seamless stitching across borders,
+ * it slightly overhangs past the apothem.
  *
  * Rules:
  *  - Adjacent edges (turn): curve toward the angular bisector.
@@ -77,9 +150,9 @@ export function midpointsFromSides(enterName, exitName, size) {
  *  - Opposite edges: subtle perpendicular offset through center.
  *  - Dead-end (no exit): curve from entry toward center and cap at (0,0).
  *
- * @param {{enter:{x:number,y:number}, exit?:{x:number,y:number}}} midpoints
- * @param {"N"|"NE"|"SE"|"S"|"SW"|"NW"} enterName
- * @param {"N"|"NE"|"SE"|"S"|"SW"|"NW"|null|undefined} exitName
+ * @param {{enter?:{x:number,y:number}, exit?:{x:number,y:number}}} midpoints
+ * @param {"N"|"NE"|"SE"|"S"|"SW"|"NW"|null} enterName
+ * @param {"N"|"NE"|"SE"|"S"|"SW"|"NW"|null} exitName
  * @param {number} size - hex radius
  * @param {string[]} [order=SIDE_ORDER] - side ordering (clockwise)
  * @returns {string} SVG path data
@@ -88,16 +161,18 @@ export function roadPath(midpoints, enterName, exitName, size, order = SIDE_ORDE
   const pIn  = midpoints.enter;
   const pOut = midpoints.exit ?? null;
 
+  if (!pIn) return ''; // nothing to draw
+
   // Slight overhang to guarantee seam continuity across borders
   const tIn = 1.02;
   const tOut = 1.02;
 
-  const aIn = EDGE_ANGLE[enterName];
+  const aIn = enterName ? EDGE_ANGLE[enterName] : 0;
   const P1 = scaleVec(pIn, tIn);
   const P2 = pOut ? scaleVec(pOut, tOut) : { x: 0, y: 0 };
 
   // Dead-end: bend inward and cap at center
-  if (!exitName) {
+  if (!exitName || !pOut) {
     const inward = { x: -Math.cos(aIn), y: -Math.sin(aIn) };
     const C = { x: P1.x + inward.x * size * 0.55, y: P1.y + inward.y * size * 0.55 };
     return `M ${P1.x} ${P1.y} Q ${C.x} ${C.y} 0 0`;
@@ -124,7 +199,8 @@ export function roadPath(midpoints, enterName, exitName, size, order = SIDE_ORDE
   }
 }
 
-/* Future extension:
- * - export function streamPath(...) with different control distances & style
- * - export function railPath(...), etc.
- */
+/* Future extension stubs (same signature as roadPath):
+export function pathPath(...)   {}
+export function railPath(...)   {}
+export function streamPath(...) {}
+*/

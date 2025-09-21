@@ -4,6 +4,28 @@
 //   buildTerrainDefs({ flavor: "v39" | "viewer" | "viz" })
 //   buildHillshadeFilter()
 
+
+export const CANON = {
+  bases: [
+    { id: 'open',   label: 'Open Ground' },
+    { id: 'woods',  label: 'Woods' },
+    { id: 'orchard',label: 'Orchard' },
+    { id: 'brush',  label: 'Brush' },
+    { id: 'grain',  label: 'Grain' },
+    { id: 'marsh',  label: 'Marsh' },
+    { id: 'sand',   label: 'Sand' },
+    { id: 'scrub',  label: 'Scrub' },
+  ],
+  hexsides: [
+    { id: 'wall',  label: 'Wall' },
+    { id: 'hedge', label: 'Hedge' },
+  ],
+  linear: [
+    { id: 'road', label: 'Road', subtypes: ['paved', 'dirt', 'sunken', 'elevated'] },
+  ],
+};
+
+
 /**
  * Pick which ID style to emit:
  * - "v39"   → ids like woodsPattern, brushPattern, openGroundPattern...

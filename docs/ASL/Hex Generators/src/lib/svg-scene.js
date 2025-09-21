@@ -19,10 +19,10 @@ export const SVG_NS = 'http://www.w3.org/2000/svg';
  * @param {number} width
  * @param {number} height
  * @param {object} [opts]
- * @param {boolean} [opts.clear=true]            - clear container first
- * @param {boolean} [opts.withDefs=true]         - inject terrain defs
- * @param {string[]} [opts.defsFlavors=['v39','viz']] - which def sets to include
- * @param {boolean} [opts.setXmlns=true]         - set the xmlns attribute
+ * @param {boolean} [opts.clear=true]
+ * @param {boolean} [opts.withDefs=true]
+ * @param {string[]} [opts.defsFlavors=['v39','viz']]
+ * @param {boolean} [opts.setXmlns=true]
  * @returns {SVGSVGElement}
  */
 export function ensureSvg(
@@ -118,4 +118,27 @@ export function text(svg, x, y, str, attrs = {}) {
   setAttrs(el, { x, y, ...attrs });
   svg.appendChild(el);
   return el;
+}
+
+/**
+ * Insert the terrain <defs> (patterns/filters) into an existing SVG once.
+ * Mirrors the injection that ensureSvg() does, but for pre-existing <svg>.
+ * @param {SVGSVGElement} svg
+ * @param {{flavors?:string[]}} [opts]
+ */
+export function createPatternDefs(svg, { flavors = ['v39','viz'] } = {}) {
+  if (!svg) return null;
+  const defsHtml = (flavors || []).map(f => buildTerrainDefs({ flavor: f })).join('');
+  if (!defsHtml) return null;
+  svg.insertAdjacentHTML('afterbegin', defsHtml);
+  const defsList = svg.querySelectorAll('defs');
+  return defsList.length ? defsList[defsList.length - 1] : null;
+}
+
+// Browser-global convenience for Hex Lab
+if (typeof window !== 'undefined') {
+  window.ASL = window.ASL || {};
+  window.ASL.render = window.ASL.render || {};
+  window.ASL.render.defs = window.ASL.render.defs || {};
+  window.ASL.render.defs.createPatternDefs = createPatternDefs;
 }

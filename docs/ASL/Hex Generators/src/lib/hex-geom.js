@@ -124,6 +124,11 @@ export function hexPolygonPoints(cx, cy, size) {
   return pts.join(" ");
 }
 
+/** Alias requested by apps: identical to hexPolygonPoints(...) */
+export function getHexPoints(cx, cy, size) {
+  return hexPolygonPoints(cx, cy, size);
+}
+
 /**
  * Outward normal angle (degrees) for side i (local coords).
  * Useful for label/marker orientation if needed.

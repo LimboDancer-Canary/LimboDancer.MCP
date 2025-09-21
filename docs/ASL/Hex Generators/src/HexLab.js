@@ -1,298 +1,162 @@
 // HexLab.js
-// Terrain Hex Laboratory (ES modules) — uses shared lib/* utilities.
+// Matches asl-hex-lab.html (uses #hexSvg, .terrain-item, #showGrid/#showCoords/#showCenter)
 
+import { ensureLayers, text } from './lib/svg-scene.js';
 import { hexPolygonPoints } from './lib/hex-geom.js';
-import { buildTerrainDefs } from './lib/terrain-defs.js';
+import { renderHex } from './lib/render.js';
+import { SIDE_ORDER } from './lib/hex-geom.js';
 
-const HEX_SIZE = 30;
-const CENTER_X = 30;
-const CENTER_Y = 26;
-
-// Precomputed flat-top hex points (same math as visualizer)
-const FLAT_HEX_POINTS = hexPolygonPoints(CENTER_X, CENTER_Y, HEX_SIZE);
-
-const stageSvg   = () => document.getElementById('hexSvg');
-const stageDefs  = () => document.getElementById('svgDefs');
-const stageGroup = () => document.getElementById('hexContent');
-
-function ensureDefs() {
-  const svg = stageSvg();
-  const defs = stageDefs();
-  // Replace any prior defs with our shared libraries:
-  defs.innerHTML =
-    buildTerrainDefs({ flavor: 'viewer' }) + // woods-pattern, light-woods-pattern, brush-pattern, grain-pattern
-    buildTerrainDefs({ flavor: 'viz' }) +    // building fills: stone1, stone2, wood
-    buildTerrainDefs({ flavor: 'v39' });     // openGroundPattern, orchardPattern, marshPattern, etc.
+// Small defs injector via window hook from svg-scene.js
+function injectDefs(svg) {
+  if (window?.ASL?.render?.defs?.createPatternDefs) {
+    window.ASL.render.defs.createPatternDefs(svg, { flavors: ['v39', 'viz'] });
+  }
 }
 
-function centerDot(showCenter) {
-  return showCenter
-    ? `<circle cx="${CENTER_X}" cy="${CENTER_Y}" r="1" fill="#fff" stroke="#333" stroke-width="0.3"/>`
-    : '';
-}
+function $(sel) { return document.querySelector(sel); }
+function $all(sel) { return Array.from(document.querySelectorAll(sel)); }
 
-function coordsLabel(showCoords, fill = '#333', y = 30) {
-  return showCoords
-    ? `<text x="${CENTER_X}" y="${y}" text-anchor="middle" font-size="4" fill="${fill}">E5</text>`
-    : '';
-}
+// Map sidebar data-terrain → canonical base/building
+const TERRAIN_MAP = {
+  // Natural
+  openGround: { base: 'open' },
+  woods:      { base: 'woods' },
+  lightWoods: { base: 'woods' },   // alias
+  brush:      { base: 'brush' },
+  orchard:    { base: 'orchard' },
+  vineyard:   { base: 'orchard' }, // placeholder alias
+  grain:      { base: 'grain' },
+  marsh:      { base: 'marsh' },
+  // Others shown in UI but not implemented yet will fall back to 'open'
+  mudflat:    { base: 'open' },
+  crag:       { base: 'open' },
+  graveyard:  { base: 'open' },
 
-function gridStroke(showGrid) {
-  return showGrid ? '#333' : 'none';
-}
+  // Water features (show as open for now – streams/rivers are linear, coming later)
+  stream: { base: 'open' },
+  river:  { base: 'open' },
+  canal:  { base: 'open' },
+  pond:   { base: 'open' },
+  lake:   { base: 'open' },
+  ocean:  { base: 'open' },
 
-//
-// Terrain renderers (return an HTML snippet that goes into #hexContent)
-// Keep names consistent with the sidebar data-terrain values.
-//
-const terrainCatalog = {
-  openGround: {
-    name: 'Open Ground',
-    description: 'Clear terrain with no obstacles or cover',
-    render: (showGrid, showCoords, showCenter) => `
-      <polygon points="${FLAT_HEX_POINTS}"
-               fill="var(--open-ground)"
-               stroke="${gridStroke(showGrid)}"
-               stroke-width="0.5"/>
-      ${centerDot(showCenter)}
-      ${coordsLabel(showCoords, '#333', 30)}
-    `,
-  },
+  // Depressions / damaged / special (placeholders)
+  gully:   { base: 'open' },
+  valley:  { base: 'open' },
+  shellholes: { base: 'open' },
+  rubble:     { base: 'open' },
+  debris:     { base: 'open' },
+  runway:     { base: 'open' },
+  villageTerrain:   { base: 'open' },
+  preparedFireZone: { base: 'open' },
 
-  woods: {
-    name: 'Woods',
-    description: 'Dense forest terrain providing concealment and cover',
-    render: (showGrid, showCoords, showCenter) => `
-      <polygon points="${FLAT_HEX_POINTS}"
-               fill="url(#woods-pattern)"
-               stroke="${gridStroke(showGrid)}"
-               stroke-width="0.5"/>
-      ${centerDot(showCenter)}
-      ${coordsLabel(showCoords, '#fff', 30)}
-    `,
-  },
-
-  lightWoods: {
-    name: 'Light Woods',
-    description: 'Sparse forest terrain with limited concealment',
-    render: (showGrid, showCoords, showCenter) => `
-      <polygon points="${FLAT_HEX_POINTS}"
-               fill="url(#light-woods-pattern)"
-               stroke="${gridStroke(showGrid)}"
-               stroke-width="0.5"/>
-      ${centerDot(showCenter)}
-      ${coordsLabel(showCoords, '#fff', 30)}
-    `,
-  },
-
-  brush: {
-    name: 'Brush',
-    description: 'Light vegetation providing hindrance but limited cover',
-    render: (showGrid, showCoords, showCenter) => `
-      <polygon points="${FLAT_HEX_POINTS}"
-               fill="url(#brush-pattern)"
-               stroke="${gridStroke(showGrid)}"
-               stroke-width="0.5"/>
-      ${centerDot(showCenter)}
-      ${coordsLabel(showCoords, '#333', 30)}
-    `,
-  },
-
-  orchard: {
-    name: 'Orchard',
-    description: 'Cultivated trees with patterned hindrance',
-    render: (showGrid, showCoords, showCenter) => `
-      <polygon points="${FLAT_HEX_POINTS}"
-               fill="url(#orchardPattern)"
-               stroke="${gridStroke(showGrid)}"
-               stroke-width="0.5"/>
-      ${centerDot(showCenter)}
-      ${coordsLabel(showCoords, '#333', 30)}
-    `,
-  },
-
-  grain: {
-    name: 'Grain',
-    description: 'Agricultural grain fields, seasonal hindrance',
-    render: (showGrid, showCoords, showCenter) => `
-      <polygon points="${FLAT_HEX_POINTS}"
-               fill="url(#grain-pattern)"
-               stroke="${gridStroke(showGrid)}"
-               stroke-width="0.5"/>
-      ${centerDot(showCenter)}
-      ${coordsLabel(showCoords, '#333', 30)}
-    `,
-  },
-
-  marsh: {
-    name: 'Marsh',
-    description: 'Wet ground with reeds and shallow pools',
-    render: (showGrid, showCoords, showCenter) => `
-      <polygon points="${FLAT_HEX_POINTS}"
-               fill="url(#marshPattern)"
-               stroke="${gridStroke(showGrid)}"
-               stroke-width="0.5"/>
-      ${centerDot(showCenter)}
-      ${coordsLabel(showCoords, '#333', 30)}
-    `,
-  },
-
-  // Water features (simple shapes; patterns not required)
-  stream: {
-    name: 'Stream',
-    description: 'Narrow water course running through depression',
-    render: (showGrid, showCoords, showCenter) => `
-      <polygon points="${FLAT_HEX_POINTS}"
-               fill="var(--open-ground)"
-               stroke="${gridStroke(showGrid)}"
-               stroke-width="0.5"/>
-      <path d="M 45,0 Q 30,26 15,52" fill="none" stroke="var(--stream-blue)" stroke-width="4"/>
-      <path d="M 45,0 Q 30,26 15,52" fill="none" stroke="#87ceeb" stroke-width="2"/>
-      ${centerDot(showCenter)}
-      ${coordsLabel(showCoords, '#333', 30)}
-    `,
-  },
-
-  pond: {
-    name: 'Pond',
-    description: 'Small body of water',
-    render: (showGrid, showCoords, showCenter) => `
-      <polygon points="${FLAT_HEX_POINTS}"
-               fill="var(--water-blue)"
-               stroke="${gridStroke(showGrid)}"
-               stroke-width="0.5"/>
-      <ellipse cx="${CENTER_X}" cy="${CENTER_Y}" rx="20" ry="15"
-               fill="none" stroke="var(--water-shallow)" stroke-width="0.5" opacity="0.5"/>
-      <ellipse cx="${CENTER_X}" cy="${CENTER_Y}" rx="12" ry="8"
-               fill="none" stroke="var(--water-shallow)" stroke-width="0.5" opacity="0.3"/>
-      ${centerDot(showCenter)}
-      ${coordsLabel(showCoords, '#fff', 30)}
-    `,
-  },
-
-  rubble: {
-    name: 'Rubble',
-    description: 'Destroyed building debris providing cover and hindrance',
-    render: (showGrid, showCoords, showCenter) => {
-      const svg = stageSvg();
-      // Lazy-inject a rubble pattern if missing (kept here for lab experimentation)
-      if (!svg.querySelector('#rubble-pattern')) {
-        stageDefs().insertAdjacentHTML('beforeend', `
-          <pattern id="rubble-pattern" width="12" height="12" patternUnits="userSpaceOnUse">
-            <rect width="12" height="12" fill="var(--rubble)"/>
-            <rect x="1" y="1" width="4" height="3" fill="#7a6651" transform="rotate(15 3 2.5)"/>
-            <rect x="7" y="2" width="3" height="4" fill="#8b7d6b" transform="rotate(-20 8.5 4)"/>
-            <rect x="2" y="7" width="5" height="2" fill="#6b5d4f" transform="rotate(25 4.5 8)"/>
-            <rect x="8" y="8" width="2" height="3" fill="#5c5248"/>
-          </pattern>
-        `);
-      }
-      return `
-        <polygon points="${FLAT_HEX_POINTS}"
-                 fill="url(#rubble-pattern)"
-                 stroke="${gridStroke(showGrid)}"
-                 stroke-width="0.5"/>
-        ${centerDot(showCenter)}
-        ${coordsLabel(showCoords, '#333', 30)}
-      `;
-    },
-  },
-
-  // Building overlays: draw footprint on open ground with a level indicator
-  'building-wooden-1': {
-    name: 'Wooden Building (1 Level)',
-    description: 'Single-story wooden building on open ground',
-    render: (showGrid, showCoords, showCenter) => `
-      <polygon points="${FLAT_HEX_POINTS}"
-               fill="var(--open-ground)"
-               stroke="${gridStroke(showGrid)}"
-               stroke-width="0.5"/>
-      <rect x="15" y="16" width="30" height="20" fill="var(--building-wood)" stroke="#333" stroke-width="0.5"/>
-      <line x1="15" y1="20" x2="45" y2="20" stroke="var(--building-wood-dark)" stroke-width="0.3"/>
-      <line x1="15" y1="26" x2="45" y2="26" stroke="var(--building-wood-dark)" stroke-width="0.3"/>
-      <line x1="15" y1="32" x2="45" y2="32" stroke="var(--building-wood-dark)" stroke-width="0.3"/>
-      <text x="${CENTER_X}" y="${CENTER_Y+1}" text-anchor="middle" font-size="6" font-weight="bold" fill="#fff">1</text>
-      ${centerDot(showCenter)}
-      ${coordsLabel(showCoords, '#333', 44)}
-    `,
-  },
-
-  'building-stone-2': {
-    name: 'Stone Building (2 Levels)',
-    description: 'Two-story stone building on open ground',
-    render: (showGrid, showCoords, showCenter) => `
-      <polygon points="${FLAT_HEX_POINTS}"
-               fill="var(--open-ground)"
-               stroke="${gridStroke(showGrid)}"
-               stroke-width="0.5"/>
-      <rect x="17" y="18" width="30" height="20" fill="var(--building-stone-dark)" opacity="0.5"/>
-      <rect x="13" y="14" width="30" height="20" fill="var(--building-stone)" stroke="#333" stroke-width="0.5"/>
-      <line x1="13" y1="20" x2="43" y2="20" stroke="var(--building-stone-dark)" stroke-width="0.5"/>
-      <line x1="13" y1="26" x2="43" y2="26" stroke="var(--building-stone-dark)" stroke-width="0.5"/>
-      <rect x="${CENTER_X-5}" y="${CENTER_Y-4}" width="10" height="8" fill="#fff" stroke="#333" stroke-width="0.3"/>
-      <text x="${CENTER_X}" y="${CENTER_Y+2}" text-anchor="middle" font-size="6" font-weight="bold" fill="#333">2</text>
-      ${centerDot(showCenter)}
-      ${coordsLabel(showCoords, '#333', 44)}
-    `,
-  },
-
-  // Default (not yet implemented)
-  default: {
-    render: (showGrid, showCoords, showCenter, name) => `
-      <polygon points="${FLAT_HEX_POINTS}"
-               fill="#e0e0e0"
-               stroke="${gridStroke(showGrid)}"
-               stroke-width="0.5"/>
-      <text x="${CENTER_X}" y="${CENTER_Y-2}" text-anchor="middle" font-size="5" fill="#666">${name}</text>
-      <text x="${CENTER_X}" y="${CENTER_Y+4}" text-anchor="middle" font-size="3" fill="#999">(Not implemented)</text>
-      ${centerDot(showCenter)}
-      ${coordsLabel(showCoords, '#333', 36)}
-    `,
-  },
+  // Building overlays (map to building patterns)
+  'building-wooden-1': { base: 'open', building: { type: 'wood',  levels: 1 } },
+  'building-wooden-2': { base: 'open', building: { type: 'wood',  levels: 2 } },
+  'building-stone-1':  { base: 'open', building: { type: 'stone', levels: 1 } },
+  'building-stone-2':  { base: 'open', building: { type: 'stone', levels: 2 } },
+  'building-factory':  { base: 'open', building: { type: 'stone', levels: 1 } }, // placeholder
+  'building-marketplace': { base: 'open', building: { type: 'stone', levels: 1 } },
+  'building-rowhouse': { base: 'open', building: { type: 'stone', levels: 1 } },
+  'building-church':   { base: 'open', building: { type: 'stone', levels: 2 } },
 };
 
-function renderTerrain(terrainType) {
-  ensureDefs(); // make sure pattern sets are present (viewer/viz/v39)
-  const content = stageGroup();
-
-  const showGrid   = document.getElementById('showGrid').checked;
-  const showCoords = document.getElementById('showCoords').checked;
-  const showCenter = document.getElementById('showCenter').checked;
-
-  const entry = terrainCatalog[terrainType] || terrainCatalog.default;
-  const html  = entry.render(showGrid, showCoords, showCenter, terrainType);
-
-  content.innerHTML = html;
-
-  // Update header
-  document.getElementById('terrainName').textContent =
-    entry.name || terrainType;
-  document.getElementById('terrainDescription').textContent =
-    entry.description || 'Custom terrain type';
+function labelForKey(key) {
+  const el = document.querySelector(`.terrain-item[data-terrain="${key}"]`);
+  return el ? el.textContent.trim() : key;
 }
 
-function wireUI() {
-  // Sidebar interactions
-  document.querySelectorAll('.terrain-item').forEach(item => {
+function parseViewBox(svg) {
+  const vb = (svg.getAttribute('viewBox') || '0 0 60 52').split(/\s+/).map(Number);
+  const [x, y, w, h] = vb.length === 4 ? vb : [0, 0, 60, 52];
+  return { x, y, w, h };
+}
+
+function clearLayers(svg) {
+  // Remove any previous layers and default content
+  svg.querySelectorAll('g[id^="layer-"]').forEach(n => n.remove());
+  const defaultGroup = $('#hexContent');
+  if (defaultGroup) defaultGroup.remove();
+  // Remove existing <defs>, we’ll re-inject fresh
+  svg.querySelectorAll('defs').forEach(d => d.remove());
+}
+
+function drawCenterDot(layer, cx, cy) {
+  const c = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+  c.setAttribute('cx', cx);
+  c.setAttribute('cy', cy);
+  c.setAttribute('r', 1.6);
+  c.setAttribute('fill', '#d00');
+  layer.appendChild(c);
+}
+
+function renderSelected(key) {
+  const svg = $('#hexSvg');
+  if (!svg) return;
+
+  clearLayers(svg);
+  injectDefs(svg);
+
+  const { w, h } = parseViewBox(svg);
+  const center = { x: w / 2, y: h / 2 };
+  const size = w / 2; // matches initial polygon: width ~ 2*size
+
+  const layers = ensureLayers(svg, ['terrain', 'roads', 'labels', 'legend']);
+
+  // Terrain template from mapping (fallback to open)
+  const pick = TERRAIN_MAP[key] || { base: 'open' };
+  const template = {
+    baseTerrain: pick.base || 'open',
+    building: pick.building || null,
+    linearTraversals: [],
+  };
+
+  // Grid/coords toggles from page
+  const showGrid = $('#showGrid')?.checked ?? true;
+  const showCoords = $('#showCoords')?.checked ?? false;
+  const showCenter = $('#showCenter')?.checked ?? true;
+
+  const used = { bases: new Set(), buildings: new Set() };
+  renderHex(layers, center, size, template, 'A1', { showGrid, showLabels: showCoords }, used);
+
+  if (showCenter) drawCenterDot(layers.labels, center.x, center.y);
+
+  // Update header (no TypeScript non-null)
+  const nameEl = $('#terrainName');
+  if (nameEl) nameEl.textContent = labelForKey(key) || 'Terrain';
+  const implemented = ['open','woods','orchard','brush','grain','marsh'].includes(template.baseTerrain) || template.building;
+  const descEl = $('#terrainDescription');
+  if (descEl) descEl.textContent = implemented
+    ? 'Rendered with shared lib (base + pattern; buildings use viz patterns).'
+    : 'Not yet implemented in renderer — shown as Open pending feature support.';
+}
+
+function main() {
+  // Sidebar clicks
+  $all('.terrain-item').forEach(item => {
     item.addEventListener('click', () => {
-      document.querySelectorAll('.terrain-item').forEach(el => el.classList.remove('active'));
+      $all('.terrain-item').forEach(n => n.classList.remove('active'));
       item.classList.add('active');
-      renderTerrain(item.getAttribute('data-terrain'));
+      renderSelected(item.getAttribute('data-terrain'));
     });
   });
 
   // Controls
-  ['showGrid', 'showCoords', 'showCenter'].forEach(id => {
-    const el = document.getElementById(id);
-    el.addEventListener('change', () => {
+  ['#showGrid', '#showCoords', '#showCenter'].forEach(id => {
+    const el = $(id);
+    if (el) el.addEventListener('change', () => {
       const active = document.querySelector('.terrain-item.active');
-      if (active) renderTerrain(active.getAttribute('data-terrain'));
+      const key = active?.getAttribute('data-terrain') || 'openGround';
+      renderSelected(key);
     });
   });
+
+  // Initial selection
+  const first = document.querySelector('.terrain-item[data-terrain="openGround"]');
+  if (first) {
+    first.classList.add('active');
+    renderSelected('openGround');
+  }
 }
 
-document.addEventListener('DOMContentLoaded', () => {
-  wireUI();
-  // Initial defs injection so patterns exist before first selection
-  ensureDefs();
-});
+document.addEventListener('DOMContentLoaded', main);

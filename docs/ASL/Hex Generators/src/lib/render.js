@@ -15,8 +15,8 @@ import {
   orderFromJSON, mapSize, defaultTemplate, parseCoord, cid
 } from './schema.js';
 import {
-  normalizeBase, baseFillColor, patternIdForBase, patternIdForBuilding,
-  labelColor, trackUsage
+  normalizeBase, baseFillColor, patternIdForBase,
+  patternIdForBuilding, labelColor, trackUsage
 } from './terrain-style.js';
 import { drawLegend } from './legend.js';
 import {
@@ -28,8 +28,13 @@ import {
 //////////////////////
 
 const GRID = {
-  stroke: 'rgba(60,60,60,0.45)',
-  width: 0.8,
+  stroke: '#3b3b3b',
+  width: 0.6,
+};
+
+const LEGEND = {
+  x: 28,
+  y: 40,
 };
 
 const LABEL = {
@@ -65,24 +70,22 @@ export function draw(container, data, opts = {}) {
     throw new Error('defaultTemplateId not found in hexTemplates');
   }
 
-  const order = orderFromJSON(data);
-  const size  = getHexSize();
-
+  const size = getHexSize();
   const { width: svgW, height: svgH } = boardCanvasSize(W, H, { size });
 
-  // 2) Prepare SVG + layers (terrain, roads, labels, legend)
+  // 2) Boot SVG + layers + defs
   const svg = ensureSvg(container, svgW, svgH, { withDefs: true, defsFlavors: ['v39', 'viz'] });
   const layers = ensureLayers(svg, ['terrain', 'roads', 'labels', 'legend']);
 
-  // Track used terrain types/buildings for the legend
   const used = { bases: new Set(), buildings: new Set() };
+  const order = orderFromJSON(data);
 
-  // 3) Paint full grid with default template
-  for (let r = 0; r < H; r++) {
-    for (let c = 0; c < W; c++) {
+  // 3) Base grid (default template everywhere)
+  for (let c = 0; c < W; c++) {
+    for (let r = 0; r < H; r++) {
       const hexId = cid(c, r);
       const center = hexPos(c, r, size);
-      paintHex(layers, center, size, defaultT, hexId, { showGrid, showLabels }, used);
+      renderHex(layers, center, size, defaultT, hexId, { showGrid, showLabels }, used);
     }
   }
 
@@ -94,7 +97,7 @@ export function draw(container, data, opts = {}) {
 
     const center = hexPos(cr.c, cr.r, size);
     const t = hexMap[hexId] || defaultT;
-    paintHex(layers, center, size, t, hexId, { showGrid, showLabels }, used);
+    renderHex(layers, center, size, t, hexId, { showGrid, showLabels }, used);
 
     if (showRoads) {
       drawRoadsForTemplate(layers.roads, center, t, size, order);
@@ -110,49 +113,40 @@ export function draw(container, data, opts = {}) {
 
     const center = hexPos(cr.c, cr.r, size);
     const baseT = data.hexTemplates?.[h.templateId] || defaultT;
-    const merged = Object.assign(
-      {},
-      baseT,
-      h.overrides && !Array.isArray(h.overrides) ? h.overrides : {}
-    );
 
-    paintHex(layers, center, size, merged, h.hexId, { showGrid, showLabels }, used);
+    // Merge overrides on top of base template
+    const t = {
+      ...baseT,
+      ...(Array.isArray(h.overrides) ? {} : h.overrides),
+    };
 
-    if (showRoads) {
-      // New format
-      for (const lt of (merged.linearTraversals || [])) {
-        drawRoadsForTraversal(layers.roads, center, lt, size, order);
-      }
-      // Legacy overrides array
-      if (Array.isArray(h.overrides)) {
-        for (const o of h.overrides) {
-          if ((o.type || '').toLowerCase() === 'road') {
-            drawRoadsForTraversal(layers.roads, center, o, size, order);
-          }
+    // Draw per-hex base/pattern/label
+    renderHex(layers, center, size, t, h.hexId, { showGrid, showLabels }, used);
+
+    // Linear features attached to this entry (new format)
+    if (showRoads && Array.isArray(h.overrides)) {
+      for (const o of h.overrides) {
+        if (!o) continue;
+        if (o.type === 'road') {
+          drawRoadsForTraversal(layers.roads, center, o, size, order);
         }
       }
     }
   }
 
-  // 6) Legend (after we know what's present)
-  // Title above board center for context, then legend block on the right.
-  text(svg, svgW / 2, 40, 'ASL Board — Generated from JSON', {
-    'text-anchor': 'middle',
-    'font-size': 12,
-    fill: '#6b7280',
-  });
-  drawLegend(layers.legend, svgW - 220, 70, used, { title: 'Map Legend' });
+  // 6) Legend (only show used items)
+  drawLegend(layers.legend, LEGEND.x, LEGEND.y, used);
 }
 
 //////////////////////
-// Internal helpers //
+// Per-hex painter  //
 //////////////////////
 
 /**
- * Draw a composite hex: solid base + pattern overlay + label (optional).
- * Tracks usage for the legend.
+ * Render a single hex (base + pattern + optional label).
+ * Exposed for Hex Lab and for apps needing per-hex previews.
  *
- * @param {{terrain:SVGGElement, roads:SVGGElement, labels:SVGGElement}} layers
+ * @param {{terrain:SVGGElement, roads:SVGGElement, labels:SVGGElement, legend:SVGGElement}} layers
  * @param {{x:number,y:number}} center
  * @param {number} size
  * @param {any} template
@@ -160,7 +154,7 @@ export function draw(container, data, opts = {}) {
  * @param {{showGrid:boolean, showLabels:boolean}} flags
  * @param {{bases:Set<string>, buildings:Set<string>}} used
  */
-function paintHex(layers, center, size, template, hexId, flags, used) {
+export function renderHex(layers, center, size, template, hexId, flags, used) {
   const base = normalizeBase(template);
   const pts  = hexPolygonPoints(center.x, center.y, size);
 
@@ -194,4 +188,11 @@ function paintHex(layers, center, size, template, hexId, flags, used) {
       'font-weight': LABEL.weight,
     });
   }
+}
+
+// Global hook for per-hex rendering if apps want it
+if (typeof window !== 'undefined') {
+  window.ASL = window.ASL || {};
+  window.ASL.render = window.ASL.render || {};
+  window.ASL.render.hex = renderHex;
 }
