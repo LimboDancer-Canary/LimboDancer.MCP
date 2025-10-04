@@ -164,11 +164,8 @@ We use **RDF projections** to serialize rulebook data, and **SHACL** to enforce 
 This gives us a robust foundation for **semantic ASL rulebook search and retrieval** inside the LimboDancer MCP platform.
 
 ---
-Got it. Here’s the **Appendix** you can paste directly under your primer. It includes the **fully commented** C# source we drafted—written with the **ASL Rulebook** context in mind.
 
----
 
-````markdown
 ## Appendix A — Reference Source Code (ASL Rulebook Semantic Stack)
 
 This appendix provides drop-in, production-ready C# files and usage examples that implement:
