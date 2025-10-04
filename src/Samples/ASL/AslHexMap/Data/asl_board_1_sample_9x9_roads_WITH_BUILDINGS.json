@@ -1,0 +1,456 @@
+{
+  "hexTemplates": {
+    "open": {
+      "id": "open",
+      "description": "Open Ground - Clear terrain with no obstacles",
+      "baseTerrain": "openGround"
+    },
+    "woods": {
+      "id": "woods",
+      "description": "Woods - Forest terrain with LOS hindrance and obstacle",
+      "baseTerrain": "woods"
+    },
+    "stone2": {
+      "id": "stone2",
+      "description": "Stone Building 2-Level - Multi-story stone structure with +3 TEM",
+      "baseTerrain": "openGround",
+      "building": {
+        "type": "stone",
+        "levels": 2
+      }
+    },
+    "stone1": {
+      "id": "stone1",
+      "description": "Stone Building 1-Level - Single-story stone structure with +3 TEM",
+      "baseTerrain": "openGround",
+      "building": {
+        "type": "stone",
+        "levels": 1
+      }
+    },
+    "wood1": {
+      "id": "wood1",
+      "description": "Wooden Building 1-Level - Single-story wooden structure with +2 TEM",
+      "baseTerrain": "openGround",
+      "building": {
+        "type": "wooden",
+        "levels": 1
+      }
+    },
+    "grain": {
+      "id": "grain",
+      "baseTerrain": "grain"
+    },
+    "orchard": {
+      "id": "orchard",
+      "baseTerrain": "orchard"
+    },
+    "brush": {
+      "id": "brush",
+      "baseTerrain": "brush"
+    },
+    "marsh": {
+      "id": "marsh",
+      "baseTerrain": "marsh"
+    },
+    "sand": {
+      "id": "sand",
+      "baseTerrain": "sand"
+    },
+    "scrub": {
+      "id": "scrub",
+      "baseTerrain": "scrub"
+    }
+  },
+  "map": {
+    "id": "board-1-sample-B1-J9",
+    "name": "ASL Board 1 — 9x9 Sample (B1–J9)",
+    "boardNumber": 1,
+    "dimensions": {
+      "width": 9,
+      "height": 9
+    },
+    "defaultTemplateId": "open",
+    "individualHexes": [
+      {
+        "hexId": "1E1",
+        "templateId": "open",
+        "overrides": [
+          {
+            "type": "road",
+            "subtype": "paved",
+            "enters": null,
+            "exits": 2,
+            "elevation": "ground"
+          }
+        ]
+      },
+      {
+        "hexId": "1F1",
+        "templateId": "open",
+        "overrides": [
+          {
+            "type": "road",
+            "subtype": "paved",
+            "enters": 5,
+            "exits": 3,
+            "elevation": "ground"
+          }
+        ]
+      },
+      {
+        "hexId": "1C2",
+        "templateId": "wood1"
+      },
+      {
+        "hexId": "1D2",
+        "templateId": "wood1"
+      },
+      {
+        "hexId": "1E2",
+        "templateId": "open",
+        "overrides": []
+      },
+      {
+        "hexId": "1F2",
+        "templateId": "open",
+        "overrides": [
+          {
+            "type": "road",
+            "subtype": "paved",
+            "enters": 0,
+            "exits": 4,
+            "elevation": "ground"
+          }
+        ]
+      },
+      {
+        "hexId": "1H2",
+        "templateId": "woods",
+        "overrides": []
+      },
+      {
+        "hexId": "1B3",
+        "templateId": "woods"
+      },
+      {
+        "hexId": "1C3",
+        "templateId": "wood1"
+      },
+      {
+        "hexId": "1D3",
+        "templateId": "open",
+        "overrides": [
+          {
+            "type": "road",
+            "subtype": "paved",
+            "enters": 1,
+            "exits": 3,
+            "elevation": "ground"
+          }
+        ]
+      },
+      {
+        "hexId": "1E3",
+        "templateId": "open",
+        "overrides": [
+          {
+            "type": "road",
+            "subtype": "paved",
+            "enters": 1,
+            "exits": 4,
+            "elevation": "ground"
+          }
+        ]
+      },
+      {
+        "hexId": "1F3",
+        "templateId": "open",
+        "overrides": []
+      },
+      {
+        "hexId": "1G3",
+        "templateId": "stone2",
+        "overrides": []
+      },
+      {
+        "hexId": "1H3",
+        "templateId": "wood1",
+        "overrides": []
+      },
+      {
+        "hexId": "1C4",
+        "templateId": "woods"
+      },
+      {
+        "hexId": "1D4",
+        "templateId": "open",
+        "overrides": [
+          {
+            "type": "road",
+            "subtype": "paved",
+            "enters": 0,
+            "exits": 2,
+            "elevation": "ground"
+          }
+        ]
+      },
+      {
+        "hexId": "1E4",
+        "templateId": "stone2"
+      },
+      {
+        "hexId": "1F4",
+        "templateId": "stone2"
+      },
+      {
+        "hexId": "1G4",
+        "templateId": "stone2"
+      },
+      {
+        "hexId": "1H4",
+        "templateId": "open",
+        "overrides": []
+      },
+      {
+        "hexId": "1D5",
+        "templateId": "wood1"
+      },
+      {
+        "hexId": "1E5",
+        "templateId": "open",
+        "overrides": [
+          {
+            "type": "road",
+            "subtype": "paved",
+            "enters": 5,
+            "exits": 3,
+            "elevation": "ground"
+          }
+        ]
+      },
+      {
+        "hexId": "1F5",
+        "templateId": "stone2"
+      },
+      {
+        "hexId": "1G5",
+        "templateId": "stone2"
+      },
+      {
+        "hexId": "1H5",
+        "templateId": "stone1"
+      },
+      {
+        "hexId": "1I5",
+        "templateId": "open",
+        "overrides": []
+      },
+      {
+        "hexId": "1B6",
+        "templateId": "woods"
+      },
+      {
+        "hexId": "1C6",
+        "templateId": "wood1"
+      },
+      {
+        "hexId": "1D6",
+        "templateId": "open",
+        "overrides": [
+          {
+            "type": "road",
+            "subtype": "paved",
+            "enters": 1,
+            "exits": 3,
+            "elevation": "ground"
+          }
+        ]
+      },
+      {
+        "hexId": "1E6",
+        "templateId": "open",
+        "overrides": [
+          {
+            "type": "road",
+            "subtype": "paved",
+            "enters": 0,
+            "exits": 4,
+            "elevation": "ground"
+          }
+        ]
+      },
+      {
+        "hexId": "1F6",
+        "templateId": "stone2"
+      },
+      {
+        "hexId": "1G6",
+        "templateId": "stone2"
+      },
+      {
+        "hexId": "1H6",
+        "templateId": "open",
+        "overrides": []
+      },
+      {
+        "hexId": "1I6",
+        "templateId": "open",
+        "overrides": []
+      },
+      {
+        "hexId": "1B7",
+        "templateId": "woods",
+        "overrides": []
+      },
+      {
+        "hexId": "1C7",
+        "templateId": "wood1"
+      },
+      {
+        "hexId": "1D7",
+        "templateId": "open",
+        "overrides": [
+          {
+            "type": "road",
+            "subtype": "paved",
+            "enters": 0,
+            "exits": 2,
+            "elevation": "ground"
+          }
+        ]
+      },
+      {
+        "hexId": "1E7",
+        "templateId": "wood1",
+        "overrides": []
+      },
+      {
+        "hexId": "1F7",
+        "templateId": "stone2",
+        "overrides": []
+      },
+      {
+        "hexId": "1G7",
+        "templateId": "stone2"
+      },
+      {
+        "hexId": "1H7",
+        "templateId": "wood1",
+        "overrides": []
+      },
+      {
+        "hexId": "1I7",
+        "templateId": "stone1"
+      },
+      {
+        "hexId": "1B8",
+        "templateId": "open",
+        "overrides": []
+      },
+      {
+        "hexId": "1D8",
+        "templateId": "wood1",
+        "overrides": []
+      },
+      {
+        "hexId": "1E8",
+        "templateId": "open",
+        "overrides": [
+          {
+            "type": "road",
+            "subtype": "paved",
+            "enters": 5,
+            "exits": 2,
+            "elevation": "ground"
+          }
+        ]
+      },
+      {
+        "hexId": "1F8",
+        "templateId": "open",
+        "overrides": [
+          {
+            "type": "road",
+            "subtype": "paved",
+            "enters": 5,
+            "exits": 4,
+            "elevation": "ground"
+          }
+        ]
+      },
+      {
+        "hexId": "1G8",
+        "templateId": "wood1",
+        "overrides": []
+      },
+      {
+        "hexId": "1I8",
+        "templateId": "open",
+        "overrides": []
+      },
+      {
+        "hexId": "1C9",
+        "templateId": "woods"
+      },
+      {
+        "hexId": "1D9",
+        "templateId": "open",
+        "overrides": [
+          {
+            "type": "road",
+            "subtype": "paved",
+            "enters": 1,
+            "exits": null,
+            "elevation": "ground"
+          }
+        ]
+      },
+      {
+        "hexId": "1E9",
+        "templateId": "open",
+        "overrides": [
+          {
+            "type": "road",
+            "subtype": "paved",
+            "enters": 1,
+            "exits": 4,
+            "elevation": "ground"
+          }
+        ]
+      },
+      {
+        "hexId": "1F9",
+        "templateId": "wood1"
+      },
+      {
+        "hexId": "1G9",
+        "templateId": "woods"
+      },
+      {
+        "hexId": "1H9",
+        "templateId": "woods"
+      }
+    ],
+    "metadata": {
+      "source": "Board 1 (cropped)",
+      "version": "0.1",
+      "author": "Assistant",
+      "note": "9x9 sample region roughly matching the screenshot; roads omitted for clarity."
+    },
+    "renderHints": {
+      "orientation": "flatTop",
+      "sideIndexing": {
+        "zeroAt": "N",
+        "orderClockwise": [
+          "N",
+          "NE",
+          "SE",
+          "S",
+          "SW",
+          "NW"
+        ]
+      }
+    }
+  }
+}

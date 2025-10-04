@@ -1,0 +1,45 @@
+﻿@using Microsoft.AspNetCore.Components
+@using System
+
+<div class="svg-host"
+     style="max-width:100%; overflow:auto; border:1px dashed #bbb; padding:8px; border-radius:6px;">
+    @if (string.IsNullOrEmpty(Svg))
+    {
+        <div class="text-danger fw-semibold">SvgHost: Svg is null or empty.</div>
+    }
+    else
+    {
+        @_svgMarkup
+    }
+
+    @if (Debug)
+    {
+        <details class="mt-2" open>
+            <summary>Debug (SvgHost)</summary>
+            <div><strong>Length:</strong> @_len</div>
+            <div><strong>Updated:</strong> @_ts.ToString("u")</div>
+            <div class="mt-1"><strong>First 200 chars:</strong></div>
+            <pre style="white-space:pre-wrap; font-size:0.85rem;">@_head</pre>
+        </details>
+    }
+</div>
+
+@code {
+    [Parameter] public string Svg { get; set; } = string.Empty;
+    [Parameter] public bool Debug { get; set; } = true;
+
+    private MarkupString _svgMarkup;
+    private int _len;
+    private string _head = "";
+    private DateTime _ts;
+
+    protected override void OnParametersSet()
+    {
+        _svgMarkup = new MarkupString(Svg ?? string.Empty);
+        _len = Svg?.Length ?? 0;
+        _head = Svg is null ? "" : (Svg.Length <= 200 ? Svg : Svg[..200]);
+        _ts = DateTime.UtcNow;
+
+        Console.WriteLine($"[SvgHost] Received Svg length={_len} at {_ts:u}");
+    }
+}
