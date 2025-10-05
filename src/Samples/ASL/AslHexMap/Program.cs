@@ -20,6 +20,10 @@ builder.Services.AddSingleton<LegendService>(serviceProvider =>
         serviceProvider.GetRequiredService<LegendJsonParser>()
     ));
 
+// Register new rendering and legend services
+builder.Services.AddScoped<BoardRenderingService>();
+builder.Services.AddScoped<LegendBuilderService>();
+
 var app = builder.Build();
 
 // Configure the HTTP request pipeline.

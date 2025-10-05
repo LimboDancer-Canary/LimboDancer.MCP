@@ -2,8 +2,10 @@
 
 @using AslHexMap.Core.Schema
 @using AslHexMap.Core.Rendering
-@inject AslHexMap.Services.JsonBoardLoader Loader
-@inject AslHexMap.Services.LegendService Legend
+@using AslHexMap.Services
+@inject JsonBoardLoader Loader
+@inject BoardRenderingService RenderingService
+@inject LegendBuilderService LegendBuilder
 
 <div class="container-fluid py-3">
     <div class="row g-3">
@@ -20,24 +22,24 @@
                     <label class="form-label mb-1">Hex size</label>
                     <input type="number" class="form-control" style="width: 110px;"
                            min="18" max="72" step="2"
-                           @bind="_size" @bind:event="oninput" @bind:after="RebuildAsync" />
+                           @bind="_renderOptions.HexSize" @bind:event="oninput" @bind:after="RebuildAsync" />
                 </div>
 
                 <div class="form-check mt-4">
                     <input class="form-check-input" type="checkbox" id="chkLabels"
-                           @bind="_showLabels" @bind:after="RebuildAsync" />
+                           @bind="_renderOptions.ShowLabels" @bind:after="RebuildAsync" />
                     <label class="form-check-label" for="chkLabels">Labels</label>
                 </div>
 
                 <div class="form-check mt-4">
                     <input class="form-check-input" type="checkbox" id="chkRoads"
-                           @bind="_showRoads" @bind:after="RebuildAsync" />
+                           @bind="_renderOptions.ShowRoads" @bind:after="RebuildAsync" />
                     <label class="form-check-label" for="chkRoads">Roads</label>
                 </div>
 
                 <div class="form-check mt-4">
                     <input class="form-check-input" type="checkbox" id="chkFeatures"
-                           @bind="_useFeatures" @bind:after="RebuildAsync" />
+                           @bind="_renderOptions.UseFeatureOverlays" @bind:after="RebuildAsync" />
                     <label class="form-check-label" for="chkFeatures">Feature overlays</label>
                 </div>
 
@@ -70,48 +72,47 @@
             <div class="border rounded p-3 bg-white">
                 <h6 class="mb-3">Legend</h6>
 
-                @if (_legendBase.Count == 0 && _legendBuildings.Count == 0)
+                @if (_legend?.HasItems != true)
                 {
                     <div class="text-muted">No items to display yet.</div>
                 }
                 else
                 {
-                    @if (_legendBase.Count > 0)
+                    @if (_legend.BaseTerrain.Count > 0)
                     {
                         <div class="mb-3">
                             <div class="fw-semibold small text-uppercase text-secondary mb-1">Base Terrain</div>
                             <ul class="list-unstyled mb-0">
-                                @foreach (var it in _legendBase)
+                                @foreach (var item in _legend.BaseTerrain)
                                 {
                                     <li class="mb-1 d-flex align-items-center gap-2">
                                         <span class="legend-swatch">
-                                            @((MarkupString)Renderer.RenderLegendIcon(it.Token, 14))
+                                            @((MarkupString)Renderer.RenderLegendIcon(item.Token, 14))
                                         </span>
-                                        <span>@it.Label</span>
+                                        <span>@item.Label</span>
                                     </li>
                                 }
                             </ul>
                         </div>
                     }
 
-                    @if (_legendBuildings.Count > 0)
+                    @if (_legend.BuildingFeatures.Count > 0)
                     {
                         <div class="mb-0">
                             <div class="fw-semibold small text-uppercase text-secondary mb-1">Building Features</div>
                             <ul class="list-unstyled mb-0">
-                                @foreach (var it in _legendBuildings)
+                                @foreach (var item in _legend.BuildingFeatures)
                                 {
                                     <li class="mb-1 d-flex align-items-center gap-2">
                                         <span class="legend-swatch">
-                                            @((MarkupString)Renderer.RenderLegendIcon(it.Token, 14))
+                                            @((MarkupString)Renderer.RenderLegendIcon(item.Token, 14))
                                         </span>
-                                        <span>@it.Label</span>
+                                        <span>@item.Label</span>
                                     </li>
                                 }
                             </ul>
                         </div>
                     }
-
                 }
             </div>
         </div>
@@ -121,20 +122,12 @@
 @code {
     // --- UI State ---
     private string _fileName = "asl_board_features_demo.json";
-    private double _size = 36;
-    private bool _showLabels = true;
-    private bool _showRoads = true;
-    private bool _useFeatures = true;
-
+    private RenderOptions _renderOptions = new();
+    
     private string _svg = "";
     private string _error = "";
-
     private BoardData? _board;
-    private LegendRenderer.LegendUsage _usage = new();
-
-    // Legend view-model slices
-    private List<(string Token, string Label)> _legendBase = new();
-    private List<(string Token, string Label)> _legendBuildings = new();
+    private LegendViewModel? _legend;
 
     protected override async Task OnInitializedAsync()
     {
@@ -143,7 +136,8 @@
 
     private async Task LoadAndRenderAsync()
     {
-        _error = "";
+        await ClearErrorAndResetState();
+        
         try
         {
             _board = await Loader.LoadSampleAsync(_fileName);
@@ -151,12 +145,7 @@
         }
         catch (Exception ex)
         {
-            _board = null;
-            _svg = "";
-            _legendBase.Clear();
-            _legendBuildings.Clear();
-            _error = ex.Message;
-            StateHasChanged();
+            await HandleLoadError(ex);
         }
     }
 
@@ -164,62 +153,56 @@
     {
         if (_board is null)
         {
-            _svg = "";
-            _legendBase.Clear();
-            _legendBuildings.Clear();
-            StateHasChanged();
+            await ResetRenderState();
             return;
         }
 
-        _usage = new LegendRenderer.LegendUsage();
+        try
+        {
+            // Validate render options
+            var validationErrors = RenderingService.ValidateRenderOptions(_renderOptions);
+            if (validationErrors.Count > 0)
+            {
+                _error = string.Join(", ", validationErrors);
+                StateHasChanged();
+                return;
+            }
 
-        _svg = Renderer.RenderBoardBase(
-          _board,
-          size: _size,
-          showLabels: _showLabels,
-          showRoads: _showRoads,
-          usage: _usage,
-          useFeatureOverlays: _useFeatures);
+            // Render the board
+            var renderResult = await RenderingService.RenderBoardAsync(_board, _renderOptions);
+            _svg = renderResult.Svg;
 
-        await BuildLegendAsync();
+            // Build the legend
+            _legend = await LegendBuilder.BuildLegendAsync(renderResult.Usage);
+            
+            StateHasChanged();
+        }
+        catch (Exception ex)
+        {
+            _error = $"Rendering error: {ex.Message}";
+            StateHasChanged();
+        }
+    }
+
+    private async Task ClearErrorAndResetState()
+    {
+        _error = "";
+        await Task.CompletedTask;
+    }
+
+    private async Task HandleLoadError(Exception ex)
+    {
+        _board = null;
+        await ResetRenderState();
+        _error = ex.Message;
         StateHasChanged();
     }
 
-    private async Task BuildLegendAsync()
+    private async Task ResetRenderState()
     {
-        var tokens = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-
-        // base terrains
-        foreach (var b in _usage.Bases)
-            tokens.Add($"base-{b}");
-
-        // building features (bridge to new legend tokens)
-        foreach (var b in _usage.Buildings)
-        {
-            if (b.Equals("wood", StringComparison.OrdinalIgnoreCase)) tokens.Add("building-wood");
-            else if (b.Equals("stone", StringComparison.OrdinalIgnoreCase)) tokens.Add("building-stone");
-        }
-
-        var model = await Legend.LoadAsync();
-        var labelMap = await Legend.LabelsForAsync(tokens);
-
-        _legendBase = new();
-        _legendBuildings = new();
-
-        foreach (var sec in model.Sections)
-        {
-            if (sec.Title.Equals("Base Terrain", StringComparison.OrdinalIgnoreCase))
-            {
-                foreach (var it in sec.Items)
-                    if (labelMap.TryGetValue(it.Token, out var lbl))
-                        _legendBase.Add((it.Token, lbl));
-            }
-            else if (sec.Title.Equals("Building Features", StringComparison.OrdinalIgnoreCase))
-            {
-                foreach (var it in sec.Items)
-                    if (labelMap.TryGetValue(it.Token, out var lbl))
-                        _legendBuildings.Add((it.Token, lbl));
-            }
-        }
+        _svg = "";
+        _legend = null;
+        StateHasChanged();
+        await Task.CompletedTask;
     }
 }
