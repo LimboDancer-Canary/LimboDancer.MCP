@@ -10,8 +10,15 @@ builder.Services.AddRazorPages();
 builder.Services.AddServerSideBlazor();
 builder.Services.AddSingleton<WeatherForecastService>();
 builder.Services.AddSingleton<JsonBoardLoader>();
-builder.Services.AddSingleton<LegendService>();
 
+// Register legend services with proper dependency injection
+builder.Services.AddSingleton<FilePathResolver>();
+builder.Services.AddSingleton<LegendJsonParser>();
+builder.Services.AddSingleton<LegendService>(serviceProvider => 
+    new LegendService(
+        serviceProvider.GetRequiredService<FilePathResolver>(),
+        serviceProvider.GetRequiredService<LegendJsonParser>()
+    ));
 
 var app = builder.Build();
 
