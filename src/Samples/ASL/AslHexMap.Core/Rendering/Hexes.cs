@@ -1,5 +1,4 @@
 ﻿using System.Text;
-using System.Text.Json;
 using AslHexMap.Core.Geometry;
 using AslHexMap.Core.Schema;
 
@@ -24,39 +23,7 @@ public static class Hexes
     public static string ResolveBaseTerrain(IndividualHex? hex, string fallback,
         IDictionary<string, HexTemplate> templates)
     {
-        string baseTerrain = fallback;
-
-        if (hex != null)
-        {
-            if (!string.IsNullOrWhiteSpace(hex.TemplateId) &&
-                templates.TryGetValue(hex.TemplateId!, out var tpl))
-            {
-                baseTerrain = TerrainStyle.NormalizeBase(tpl.BaseTerrain);
-
-                // some templates may carry ground cover in Overlays
-                if (tpl.Overlays != null)
-                {
-                    if (tpl.Overlays.TryGetValue("groundCover", out var gc) && gc is string gcs)
-                        baseTerrain = TerrainStyle.NormalizeBase(gcs);
-                    else if (tpl.Overlays.ContainsKey("grain"))
-                        baseTerrain = "grain";
-                }
-            }
-
-            // per-hex overrides
-            if (hex.Overrides.HasValue && hex.Overrides.Value.ValueKind == JsonValueKind.Object)
-            {
-                var ov = hex.Overrides.Value;
-                if (ov.TryGetProperty("baseTerrain", out var bt) && bt.ValueKind == JsonValueKind.String)
-                    baseTerrain = TerrainStyle.NormalizeBase(bt.GetString());
-                if (ov.TryGetProperty("groundCover", out var gc2) && gc2.ValueKind == JsonValueKind.String)
-                    baseTerrain = TerrainStyle.NormalizeBase(gc2.GetString());
-                if (ov.TryGetProperty("grain", out var gr) &&
-                    (gr.ValueKind == JsonValueKind.True || gr.ValueKind == JsonValueKind.String))
-                    baseTerrain = "grain";
-            }
-        }
-
-        return baseTerrain;
+        var resolver = new TerrainResolver();
+        return resolver.ResolveBaseTerrain(hex, fallback, templates);
     }
 }
