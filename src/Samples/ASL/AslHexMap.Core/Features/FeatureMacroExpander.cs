@@ -6,87 +6,58 @@ using AslHexMap.Core.Schema;
 
 namespace AslHexMap.Core.Features
 {
+    /// <summary>
+    /// Static facade for feature map building, maintaining backward compatibility.
+    /// Internally uses the new modular architecture for better testability and maintainability.
+    /// </summary>
     public static class FeatureMacroExpander
     {
+        private static readonly Lazy<FeatureMapBuilder> _builder = new(() =>
+        {
+            var templateResolver = new TemplateResolver();
+            var featureFactory = new FeatureFactory();
+            var legacyExpander = new LegacyMacroExpander();
+            return new FeatureMapBuilder(templateResolver, featureFactory, legacyExpander);
+        });
+
+        /// <summary>
+        /// Builds a feature map from board data using the new modular architecture.
+        /// This method maintains the original public API for backward compatibility.
+        /// </summary>
+        /// <param name="data">The board data to process</param>
+        /// <returns>Dictionary mapping hex coordinates to lists of overlay features</returns>
         public static Dictionary<(int col, int row), List<IOverlayFeature>> BuildFeatureMap(BoardData data)
         {
-            var map = new Dictionary<(int col, int row), List<IOverlayFeature>>();
-            if (data?.Map is null) return map;
+            return _builder.Value.BuildFeatureMap(data);
+        }
 
-            var templates = data.HexTemplates ?? new Dictionary<string, HexTemplate>(StringComparer.OrdinalIgnoreCase);
-            var hexes = data.Map.IndividualHexes;
-            if (hexes is null) return map;
+        /// <summary>
+        /// Creates a new FeatureMapBuilder instance with default dependencies.
+        /// Useful for testing or when you need to customize the building process.
+        /// </summary>
+        /// <returns>A new FeatureMapBuilder instance</returns>
+        public static FeatureMapBuilder CreateBuilder()
+        {
+            var templateResolver = new TemplateResolver();
+            var featureFactory = new FeatureFactory();
+            var legacyExpander = new LegacyMacroExpander();
+            return new FeatureMapBuilder(templateResolver, featureFactory, legacyExpander);
+        }
 
-            foreach (var h in hexes)
-            {
-                (int col, int row) key;
-                try { key = BoardCoord.Parse(h.HexId); }
-                catch { continue; }
-
-                var bucket = new List<IOverlayFeature>();
-
-                // 1) Typed features from per-hex overrides ARRAY (e.g., road, building-footprint, etc.)
-                if (h.Overrides.HasValue && h.Overrides.Value.ValueKind == JsonValueKind.Array)
-                {
-                    foreach (var el in h.Overrides.Value.EnumerateArray())
-                    {
-                        if (FeatureRegistry.TryCreate(el, out var f) && f is not null)
-                            bucket.Add(f);
-                    }
-                }
-
-                // Avoid double-drawing: if a typed BuildingFootprint already exists, skip legacy macro
-                bool hasTypedFootprint = bucket.Any(f => f is BuildingFootprint);
-
-                // 2) Legacy macro expansion (template/overrides "building" → BuildingFootprint),
-                //    only when no typed footprint was provided.
-                if (!hasTypedFootprint)
-                {
-                    BuildingSpec? bspec = null;
-
-                    // from template
-                    if (!string.IsNullOrWhiteSpace(h.TemplateId) &&
-                        templates.TryGetValue(h.TemplateId!, out var tpl) &&
-                        tpl.Building is not null)
-                    {
-                        bspec = tpl.Building;
-                    }
-
-                    // from overrides OBJECT
-                    if (bspec is null && h.Overrides.HasValue && h.Overrides.Value.ValueKind == JsonValueKind.Object)
-                    {
-                        var obj = h.Overrides.Value;
-                        if (obj.TryGetProperty("building", out var b) && b.ValueKind == JsonValueKind.Object)
-                        {
-                            var spec = new BuildingSpec();
-                            if (b.TryGetProperty("type", out var tEl) && tEl.ValueKind == JsonValueKind.String)
-                                spec.Type = tEl.GetString();
-                            if (b.TryGetProperty("levels", out var lEl) && lEl.ValueKind == JsonValueKind.Number)
-                                spec.Levels = lEl.GetInt32();
-                            bspec = spec;
-                        }
-                    }
-
-                    if (bspec is not null)
-                    {
-                        var mat = (bspec.Type ?? "").Equals("stone", StringComparison.OrdinalIgnoreCase)
-                            ? BuildingMaterial.Stone
-                            : BuildingMaterial.Wood;
-
-                        bucket.Add(new BuildingFootprint
-                        {
-                            Material = mat,
-                            Footprint = FootprintKind.Center,
-                            Levels = bspec.Levels
-                        });
-                    }
-                }
-
-                if (bucket.Count > 0)
-                    map[key] = bucket;
-            }
-
-            return map;
+        /// <summary>
+        /// Creates a FeatureMapBuilder with custom dependencies.
+        /// Useful for testing with mocked dependencies.
+        /// </summary>
+        /// <param name="templateResolver">Custom template resolver</param>
+        /// <param name="featureFactory">Custom feature factory</param>
+        /// <param name="legacyExpander">Custom legacy macro expander</param>
+        /// <returns>A new FeatureMapBuilder instance</returns>
+        public static FeatureMapBuilder CreateBuilder(
+            TemplateResolver templateResolver,
+            FeatureFactory featureFactory,
+            LegacyMacroExpander legacyExpander)
+        {
+            return new FeatureMapBuilder(templateResolver, featureFactory, legacyExpander);
         }
     }
 }
