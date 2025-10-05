@@ -2,6 +2,7 @@ using Microsoft.AspNetCore.Components;
 using Microsoft.AspNetCore.Components.Web;
 using AslHexMap.Data;
 using AslHexMap.Services;
+using AslHexMap.Core.Schema;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -9,7 +10,19 @@ var builder = WebApplication.CreateBuilder(args);
 builder.Services.AddRazorPages();
 builder.Services.AddServerSideBlazor();
 builder.Services.AddSingleton<WeatherForecastService>();
-builder.Services.AddSingleton<JsonBoardLoader>();
+
+// Register generic JSON loader services
+builder.Services.AddSingleton<JsonFileLoader<BoardData>>();
+builder.Services.AddSingleton<BoardFilePathResolver>(serviceProvider =>
+{
+    var env = serviceProvider.GetRequiredService<IWebHostEnvironment>();
+    return new BoardFilePathResolver(env.ContentRootPath);
+});
+builder.Services.AddSingleton<JsonBoardLoader>(serviceProvider =>
+    new JsonBoardLoader(
+        serviceProvider.GetRequiredService<JsonFileLoader<BoardData>>(),
+        serviceProvider.GetRequiredService<BoardFilePathResolver>()
+    ));
 
 // Register legend services with proper dependency injection
 builder.Services.AddSingleton<FilePathResolver>();
