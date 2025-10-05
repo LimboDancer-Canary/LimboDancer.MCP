@@ -1,88 +1,225 @@
 ﻿@page "/"
-@using AslHexMap.Core.Rendering
-@using AslHexMap.Services
-@inject JsonBoardLoader Loader
 
-<PageTitle>Board</PageTitle>
+@using AslHexMap.Core.Schema
+@using AslHexMap.Core.Rendering
+@inject AslHexMap.Services.JsonBoardLoader Loader
+@inject AslHexMap.Services.LegendService Legend
 
 <div class="container-fluid py-3">
-    <!-- Toolbar -->
-    <div class="d-flex justify-content-between align-items-center mb-3">
-        <h5 class="mb-0">ASL Board — Generated from JSON</h5>
-        <div class="btn-toolbar gap-2">
-            <button class="btn btn-sm btn-primary" @onclick="LoadSample">Load Sample JSON</button>
-            <button class="btn btn-sm btn-secondary" @onclick="ShowGrid">Show Grid 5x4</button>
-            <button class="btn btn-sm btn-outline-secondary" @onclick="ShowTest">Show TEST SVG</button>
-        </div>
-    </div>
-
-    <div class="row g-4">
-        <!-- Map column -->
-        <div class="col-12 col-xl">
-            <div class="bg-white rounded-3 shadow-sm p-2">
-                <SvgHost Svg="@_svg" Debug="false" @key="_svg" />
-            </div>
-            @* Optional little debug readout *@
-            <div class="small text-muted mt-2">Current: @_current &nbsp;|&nbsp; SVG Length: @_svg?.Length</div>
-        </div>
-
-        <!-- Legend column -->
-        <div class="col-12 col-md-5 col-lg-4 col-xl-3">
-            <div class="position-sticky" style="top: 1rem;">
-                <div class="bg-white rounded-3 shadow-sm p-2">
-                    <SvgHost Svg="@_legendSvg" Debug="false" @key="_legendSvg" />
+    <div class="row g-3">
+        <!-- Controls -->
+        <div class="col-12">
+            <div class="d-flex flex-wrap align-items-end gap-3">
+                <div>
+                    <label class="form-label mb-1">JSON file</label>
+                    <input class="form-control" style="min-width: 320px;"
+                           @bind="_fileName" @bind:event="oninput" />
                 </div>
+
+                <div>
+                    <label class="form-label mb-1">Hex size</label>
+                    <input type="number" class="form-control" style="width: 110px;"
+                           min="18" max="72" step="2"
+                           @bind="_size" @bind:event="oninput" @bind:after="RebuildAsync" />
+                </div>
+
+                <div class="form-check mt-4">
+                    <input class="form-check-input" type="checkbox" id="chkLabels"
+                           @bind="_showLabels" @bind:after="RebuildAsync" />
+                    <label class="form-check-label" for="chkLabels">Labels</label>
+                </div>
+
+                <div class="form-check mt-4">
+                    <input class="form-check-input" type="checkbox" id="chkRoads"
+                           @bind="_showRoads" @bind:after="RebuildAsync" />
+                    <label class="form-check-label" for="chkRoads">Roads</label>
+                </div>
+
+                <div class="form-check mt-4">
+                    <input class="form-check-input" type="checkbox" id="chkFeatures"
+                           @bind="_useFeatures" @bind:after="RebuildAsync" />
+                    <label class="form-check-label" for="chkFeatures">Feature overlays</label>
+                </div>
+
+                <button class="btn btn-primary mt-3" @onclick="LoadAndRenderAsync">
+                    Load & Render
+                </button>
+
+                @if (!string.IsNullOrWhiteSpace(_error))
+                {
+                    <div class="text-danger ms-2">@_error</div>
+                }
+            </div>
+        </div>
+
+        <!-- Map + Legend -->
+        <div class="col-12 col-lg-9">
+            <div class="border rounded p-2 bg-white" style="min-height: 360px; overflow:auto;">
+                @if (!string.IsNullOrEmpty(_svg))
+                {
+                    @((MarkupString)_svg)
+                }
+                else
+                {
+                    <div class="text-muted">Load a JSON map to render…</div>
+                }
+            </div>
+        </div>
+
+        <div class="col-12 col-lg-3">
+            <div class="border rounded p-3 bg-white">
+                <h6 class="mb-3">Legend</h6>
+
+                @if (_legendBase.Count == 0 && _legendBuildings.Count == 0)
+                {
+                    <div class="text-muted">No items to display yet.</div>
+                }
+                else
+                {
+                    @if (_legendBase.Count > 0)
+                    {
+                        <div class="mb-3">
+                            <div class="fw-semibold small text-uppercase text-secondary mb-1">Base Terrain</div>
+                            <ul class="list-unstyled mb-0">
+                                @foreach (var it in _legendBase)
+                                {
+                                    <li class="mb-1 d-flex align-items-center gap-2">
+                                        <span class="legend-swatch">
+                                            @((MarkupString)Renderer.RenderLegendIcon(it.Token, 14))
+                                        </span>
+                                        <span>@it.Label</span>
+                                    </li>
+                                }
+                            </ul>
+                        </div>
+                    }
+
+                    @if (_legendBuildings.Count > 0)
+                    {
+                        <div class="mb-0">
+                            <div class="fw-semibold small text-uppercase text-secondary mb-1">Building Features</div>
+                            <ul class="list-unstyled mb-0">
+                                @foreach (var it in _legendBuildings)
+                                {
+                                    <li class="mb-1 d-flex align-items-center gap-2">
+                                        <span class="legend-swatch">
+                                            @((MarkupString)Renderer.RenderLegendIcon(it.Token, 14))
+                                        </span>
+                                        <span>@it.Label</span>
+                                    </li>
+                                }
+                            </ul>
+                        </div>
+                    }
+
+                }
             </div>
         </div>
     </div>
 </div>
 
 @code {
-    private string _svg = string.Empty;
-    private string _legendSvg = string.Empty;
-    private string _current = "none";
+    // --- UI State ---
+    private string _fileName = "asl_board_features_demo.json";
+    private double _size = 36;
+    private bool _showLabels = true;
+    private bool _showRoads = true;
+    private bool _useFeatures = true;
 
-    protected override void OnInitialized()
+    private string _svg = "";
+    private string _error = "";
+
+    private BoardData? _board;
+    private LegendRenderer.LegendUsage _usage = new();
+
+    // Legend view-model slices
+    private List<(string Token, string Label)> _legendBase = new();
+    private List<(string Token, string Label)> _legendBuildings = new();
+
+    protected override async Task OnInitializedAsync()
     {
-        // Start with a tiny grid so page isn't empty
-        _svg = Renderer.RenderHexGrid(5, 4, 36, "grain");
-        var usage = LegendRenderer.CreateUsage();
-        usage.Bases.Add("grain");
-        _legendSvg = LegendRenderer.BuildLegendSvg(usage, hexSize: 14, title: "Map Legend");
-        _current = "GRID";
+        await LoadAndRenderAsync();
     }
 
-    private void ShowTest()
+    private async Task LoadAndRenderAsync()
     {
-        _current = "TEST";
-        _svg = Renderer.RenderTestSvg();
-        _legendSvg = "<svg xmlns='http://www.w3.org/2000/svg' width='10' height='10' viewBox='0 0 10 10'></svg>";
-    }
-
-    private void ShowGrid()
-    {
-        _current = "GRID";
-        _svg = Renderer.RenderHexGrid(cols: 5, rows: 4, size: 36, baseTerrain: "grain");
-        var usage = LegendRenderer.CreateUsage();
-        usage.Bases.Add("grain");
-        _legendSvg = LegendRenderer.BuildLegendSvg(usage, hexSize: 14, title: "Map Legend");
-    }
-
-    private async Task LoadSample()
-    {
-        var data = await Loader.LoadSampleAsync(); // expects file in AslHexMap/Data/...
-        if (data is null)
+        _error = "";
+        try
         {
-            _current = "NO_JSON";
-            _svg = "<svg xmlns='http://www.w3.org/2000/svg' width='10' height='10' viewBox='0 0 10 10'></svg>";
-            _legendSvg = _svg;
+            _board = await Loader.LoadSampleAsync(_fileName);
+            await RebuildAsync();
+        }
+        catch (Exception ex)
+        {
+            _board = null;
+            _svg = "";
+            _legendBase.Clear();
+            _legendBuildings.Clear();
+            _error = ex.Message;
+            StateHasChanged();
+        }
+    }
+
+    private async Task RebuildAsync()
+    {
+        if (_board is null)
+        {
+            _svg = "";
+            _legendBase.Clear();
+            _legendBuildings.Clear();
+            StateHasChanged();
             return;
         }
 
-        var usage = LegendRenderer.CreateUsage();
-        // NOTE: Renderer will populate usage.Bases (and, later, Buildings) as it draws.
-        _svg = Renderer.RenderBoardBase(data, size: 36, showLabels: true, showRoads: true, usage: usage);
-        _legendSvg = LegendRenderer.BuildLegendSvg(usage, hexSize: 14, title: "Map Legend");
-        _current = "JSON";
+        _usage = new LegendRenderer.LegendUsage();
+
+        _svg = Renderer.RenderBoardBase(
+          _board,
+          size: _size,
+          showLabels: _showLabels,
+          showRoads: _showRoads,
+          usage: _usage,
+          useFeatureOverlays: _useFeatures);
+
+        await BuildLegendAsync();
+        StateHasChanged();
+    }
+
+    private async Task BuildLegendAsync()
+    {
+        var tokens = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+        // base terrains
+        foreach (var b in _usage.Bases)
+            tokens.Add($"base-{b}");
+
+        // building features (bridge to new legend tokens)
+        foreach (var b in _usage.Buildings)
+        {
+            if (b.Equals("wood", StringComparison.OrdinalIgnoreCase)) tokens.Add("building-wood");
+            else if (b.Equals("stone2", StringComparison.OrdinalIgnoreCase)) tokens.Add("building-stone2");
+        }
+
+        var model = await Legend.LoadAsync();
+        var labelMap = await Legend.LabelsForAsync(tokens);
+
+        _legendBase = new();
+        _legendBuildings = new();
+
+        foreach (var sec in model.Sections)
+        {
+            if (sec.Title.Equals("Base Terrain", StringComparison.OrdinalIgnoreCase))
+            {
+                foreach (var it in sec.Items)
+                    if (labelMap.TryGetValue(it.Token, out var lbl))
+                        _legendBase.Add((it.Token, lbl));
+            }
+            else if (sec.Title.Equals("Building Features", StringComparison.OrdinalIgnoreCase))
+            {
+                foreach (var it in sec.Items)
+                    if (labelMap.TryGetValue(it.Token, out var lbl))
+                        _legendBuildings.Add((it.Token, lbl));
+            }
+        }
     }
 }

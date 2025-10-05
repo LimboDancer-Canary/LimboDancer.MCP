@@ -1,0 +1,346 @@
+{
+  "version": "0.2-features-demo",
+  "meta": {
+    "title": "ASL Features Demo Board",
+    "createdUtc": "2025-10-04T23:25:22.031776Z",
+    "notes": "Demonstrates BuildingFootprint, Stairwell, RowhouseEdge features; keeps backward compatibility via building macros in templates."
+  },
+  "hexTemplates": {
+    "open": {
+      "id": "open",
+      "baseTerrain": "open"
+    },
+    "woods": {
+      "id": "woods",
+      "baseTerrain": "woods"
+    },
+    "grain": {
+      "id": "grain",
+      "baseTerrain": "grain"
+    },
+    "orchard": {
+      "id": "orchard",
+      "baseTerrain": "orchard"
+    },
+    "brush": {
+      "id": "brush",
+      "baseTerrain": "brush"
+    },
+    "marsh": {
+      "id": "marsh",
+      "baseTerrain": "marsh"
+    },
+    "sand": {
+      "id": "sand",
+      "baseTerrain": "sand"
+    },
+    "scrub": {
+      "id": "scrub",
+      "baseTerrain": "scrub"
+    },
+    "wood1": {
+      "id": "wood1",
+      "baseTerrain": "open",
+      "building": {
+        "type": "wooden",
+        "levels": 1
+      }
+    },
+    "stone2": {
+      "id": "stone2",
+      "baseTerrain": "open",
+      "building": {
+        "type": "stone",
+        "levels": 2
+      }
+    }
+  },
+  "map": {
+    "boardNumber": "FDEMO-1",
+    "dimensions": {
+      "width": 9,
+      "height": 9
+    },
+    "defaultTemplateId": "open",
+    "individualHexes": [
+      {
+        "hexId": "1A1",
+        "templateId": "grain"
+      },
+      {
+        "hexId": "1A2",
+        "templateId": "grain"
+      },
+      {
+        "hexId": "1A3",
+        "templateId": "grain"
+      },
+      {
+        "hexId": "1A8",
+        "templateId": "scrub"
+      },
+      {
+        "hexId": "1A9",
+        "templateId": "scrub"
+      },
+      {
+        "hexId": "1B1",
+        "templateId": "grain"
+      },
+      {
+        "hexId": "1B2",
+        "templateId": "grain"
+      },
+      {
+        "hexId": "1B3",
+        "templateId": "grain"
+      },
+      {
+        "hexId": "1C2",
+        "templateId": "woods"
+      },
+      {
+        "hexId": "1C3",
+        "templateId": "woods"
+      },
+      {
+        "hexId": "1C6",
+        "templateId": "woods"
+      },
+      {
+        "hexId": "1C7",
+        "templateId": "woods"
+      },
+      {
+        "hexId": "1C9",
+        "templateId": "woods"
+      },
+      {
+        "hexId": "1I2",
+        "templateId": "woods"
+      },
+      {
+        "hexId": "1I3",
+        "templateId": "woods"
+      },
+      {
+        "hexId": "1I6",
+        "templateId": "woods"
+      },
+      {
+        "hexId": "1I7",
+        "templateId": "woods"
+      },
+      {
+        "hexId": "1I9",
+        "templateId": "woods"
+      },
+      {
+        "hexId": "1E3",
+        "templateId": "stone2",
+        "overrides": [
+          {
+            "type": "building-footprint",
+            "material": "stone",
+            "footprint": "span",
+            "orientation": "W_E",
+            "depth": 0.62,
+            "groupId": "S2"
+          }
+        ]
+      },
+      {
+        "hexId": "1F3",
+        "templateId": "stone2",
+        "overrides": [
+          {
+            "type": "building-footprint",
+            "material": "stone",
+            "footprint": "span",
+            "orientation": "W_E",
+            "depth": 0.62,
+            "groupId": "S2"
+          },
+          {
+            "type": "stairwell",
+            "present": true
+          }
+        ]
+      },
+      {
+        "hexId": "1G3",
+        "templateId": "stone2",
+        "overrides": [
+          {
+            "type": "building-footprint",
+            "material": "stone",
+            "footprint": "span",
+            "orientation": "W_E",
+            "depth": 0.62,
+            "groupId": "S2"
+          }
+        ]
+      },
+      {
+        "hexId": "1C2",
+        "templateId": "wood1",
+        "overrides": [
+          {
+            "type": "building-footprint",
+            "material": "wood",
+            "footprint": "center",
+            "depth": 0.58
+          }
+        ]
+      },
+      {
+        "hexId": "1C3",
+        "templateId": "wood1",
+        "overrides": [
+          {
+            "type": "building-footprint",
+            "material": "wood",
+            "footprint": "center",
+            "depth": 0.58
+          }
+        ]
+      },
+      {
+        "hexId": "1B4",
+        "templateId": "wood1",
+        "overrides": [
+          {
+            "type": "building-footprint",
+            "material": "wood",
+            "footprint": "span",
+            "orientation": "W_E",
+            "depth": 0.56,
+            "groupId": "RH1"
+          },
+          {
+            "type": "rowhouse-edge",
+            "edges": [
+              "E"
+            ]
+          }
+        ]
+      },
+      {
+        "hexId": "1C4",
+        "templateId": "wood1",
+        "overrides": [
+          {
+            "type": "building-footprint",
+            "material": "wood",
+            "footprint": "span",
+            "orientation": "W_E",
+            "depth": 0.56,
+            "groupId": "RH1"
+          },
+          {
+            "type": "rowhouse-edge",
+            "edges": [
+              "W",
+              "E"
+            ]
+          }
+        ]
+      },
+      {
+        "hexId": "1D4",
+        "templateId": "wood1",
+        "overrides": [
+          {
+            "type": "building-footprint",
+            "material": "wood",
+            "footprint": "span",
+            "orientation": "W_E",
+            "depth": 0.56,
+            "groupId": "RH1"
+          },
+          {
+            "type": "rowhouse-edge",
+            "edges": [
+              "W"
+            ]
+          }
+        ]
+      },
+      {
+        "hexId": "1E6",
+        "templateId": "stone2",
+        "overrides": [
+          {
+            "type": "building-footprint",
+            "material": "stone",
+            "footprint": "span",
+            "orientation": "NE_SW",
+            "depth": 0.6,
+            "groupId": "S2V"
+          }
+        ]
+      },
+      {
+        "hexId": "1F6",
+        "templateId": "stone2",
+        "overrides": [
+          {
+            "type": "building-footprint",
+            "material": "stone",
+            "footprint": "span",
+            "orientation": "NE_SW",
+            "depth": 0.6,
+            "groupId": "S2V"
+          },
+          {
+            "type": "stairwell",
+            "present": true
+          }
+        ]
+      },
+      {
+        "hexId": "1F8",
+        "templateId": "wood1",
+        "overrides": [
+          {
+            "type": "building-footprint",
+            "material": "wood",
+            "footprint": "side",
+            "orientation": "W_E",
+            "depth": 0.52
+          }
+        ]
+      },
+      {
+        "hexId": "1F1",
+        "overrides": [
+          {
+            "type": "road",
+            "enters": "NW",
+            "exits": "S"
+          }
+        ]
+      },
+      {
+        "hexId": "1F2",
+        "overrides": [
+          {
+            "type": "road",
+            "enters": "N",
+            "exits": "S"
+          }
+        ]
+      },
+      {
+        "hexId": "1F3",
+        "overrides": [
+          {
+            "type": "road",
+            "enters": "N",
+            "exits": "SE"
+          }
+        ]
+      }
+    ]
+  }
+}

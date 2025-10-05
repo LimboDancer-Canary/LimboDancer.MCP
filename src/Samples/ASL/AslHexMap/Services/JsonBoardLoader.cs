@@ -16,7 +16,7 @@ namespace AslHexMap.Services
 
         public JsonBoardLoader(IWebHostEnvironment env) => _env = env;
 
-        public async Task<BoardData?> LoadSampleAsync(string fileName = "asl_board_1_sample_9x9_roads_WITH_BUILDINGS.json")
+        public async Task<BoardData?> LoadSampleAsync(string fileName = "asl_board_features_demo.json")
         {
             var path = Path.Combine(_env.ContentRootPath, "Data", fileName);
             if (!File.Exists(path)) return null;

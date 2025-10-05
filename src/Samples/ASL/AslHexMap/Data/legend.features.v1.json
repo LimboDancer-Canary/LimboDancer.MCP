@@ -1,0 +1,27 @@
+{
+  "version": "1",
+  "sections": [
+    {
+      "title": "Base Terrain",
+      "items": [
+        { "token": "base-open",    "label": "Open Ground" },
+        { "token": "base-woods",   "label": "Woods" },
+        { "token": "base-grain",   "label": "Grain" },
+        { "token": "base-orchard", "label": "Orchard" },
+        { "token": "base-brush",   "label": "Brush" },
+        { "token": "base-marsh",   "label": "Marsh" },
+        { "token": "base-sand",    "label": "Sand" },
+        { "token": "base-scrub",   "label": "Scrub" }
+      ]
+    },
+    {
+      "title": "Building Features",
+      "items": [
+        { "token": "building-wood",   "label": "Wood Building" },
+        { "token": "building-stone2", "label": "Stone Building (2 levels)" },
+        { "token": "feature-stairwell", "label": "Stairwell" },
+        { "token": "feature-rowhouse-edge", "label": "Rowhouse Edge" }
+      ]
+    }
+  ]
+}

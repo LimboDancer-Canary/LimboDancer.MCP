@@ -10,6 +10,8 @@ builder.Services.AddRazorPages();
 builder.Services.AddServerSideBlazor();
 builder.Services.AddSingleton<WeatherForecastService>();
 builder.Services.AddSingleton<JsonBoardLoader>();
+builder.Services.AddSingleton<LegendService>();
+
 
 var app = builder.Build();
 
