@@ -5,20 +5,19 @@ namespace AslHexMap.Core.Rendering;
 /// <summary>Small shared helpers.</summary>
 public static class Util
 {
+    private static readonly ColumnLetterConverter _columnConverter = new();
+
     public static Func<double, double, (double, double)> MakeShifter(double minX, double minY, double margin)
         => (x, y) => (x - minX + margin, y - minY + margin);
 
+    /// <summary>
+    /// Converts zero-based column index to column letters.
+    /// </summary>
+    /// <param name="index">Zero-based column index</param>
+    /// <returns>Column letters representation</returns>
     public static string IndexToLetters(int index)
     {
-        index += 1;
-        var s = "";
-        while (index > 0)
-        {
-            int rem = (index - 1) % 26;
-            s = (char)('A' + rem) + s;
-            index = (index - 1) / 26;
-        }
-        return s;
+        return _columnConverter.IndexToLetters(index);
     }
 
     public static Dictionary<(int col, int row), IndividualHex> IndexPerHex(BoardData data)
