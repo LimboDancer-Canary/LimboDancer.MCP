@@ -14,8 +14,9 @@ namespace AslHexMap.Core.Features
     {
         private static readonly Lazy<FeatureMapBuilder> _builder = new(() =>
         {
+            var featureRegistry = new FeatureRegistry();
             var templateResolver = new TemplateResolver();
-            var featureFactory = new FeatureFactory();
+            var featureFactory = new FeatureFactory(featureRegistry);
             var legacyExpander = new LegacyMacroExpander();
             return new FeatureMapBuilder(templateResolver, featureFactory, legacyExpander);
         });
@@ -38,9 +39,28 @@ namespace AslHexMap.Core.Features
         /// <returns>A new FeatureMapBuilder instance</returns>
         public static FeatureMapBuilder CreateBuilder()
         {
+            var featureRegistry = new FeatureRegistry();
             var templateResolver = new TemplateResolver();
-            var featureFactory = new FeatureFactory();
+            var featureFactory = new FeatureFactory(featureRegistry);
             var legacyExpander = new LegacyMacroExpander();
+            return new FeatureMapBuilder(templateResolver, featureFactory, legacyExpander);
+        }
+
+        /// <summary>
+        /// Creates a FeatureMapBuilder with custom dependencies.
+        /// Useful for testing with mocked dependencies.
+        /// </summary>
+        /// <param name="featureRegistry">Custom feature registry</param>
+        /// <param name="templateResolver">Custom template resolver</param>
+        /// <param name="featureFactory">Custom feature factory</param>
+        /// <param name="legacyExpander">Custom legacy macro expander</param>
+        /// <returns>A new FeatureMapBuilder instance</returns>
+        public static FeatureMapBuilder CreateBuilder(
+            IFeatureRegistry featureRegistry,
+            TemplateResolver templateResolver,
+            FeatureFactory featureFactory,
+            LegacyMacroExpander legacyExpander)
+        {
             return new FeatureMapBuilder(templateResolver, featureFactory, legacyExpander);
         }
 

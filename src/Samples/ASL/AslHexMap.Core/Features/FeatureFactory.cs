@@ -11,6 +11,17 @@ namespace AslHexMap.Core.Features
     /// </summary>
     public class FeatureFactory
     {
+        private readonly IFeatureRegistry _featureRegistry;
+
+        /// <summary>
+        /// Initializes a new instance of FeatureFactory with the specified feature registry.
+        /// </summary>
+        /// <param name="featureRegistry">The feature registry to use for creating features</param>
+        public FeatureFactory(IFeatureRegistry featureRegistry)
+        {
+            _featureRegistry = featureRegistry ?? throw new ArgumentNullException(nameof(featureRegistry));
+        }
+
         /// <summary>
         /// Creates typed features from JSON array overrides.
         /// </summary>
@@ -25,7 +36,7 @@ namespace AslHexMap.Core.Features
 
             foreach (var element in overrides.EnumerateArray())
             {
-                if (FeatureRegistry.TryCreate(element, out var feature) && feature is not null)
+                if (_featureRegistry.TryCreate(element, out var feature) && feature is not null)
                 {
                     features.Add(feature);
                 }

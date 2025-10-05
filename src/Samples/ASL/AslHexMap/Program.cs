@@ -3,6 +3,7 @@ using Microsoft.AspNetCore.Components.Web;
 using AslHexMap.Data;
 using AslHexMap.Services;
 using AslHexMap.Core.Schema;
+using AslHexMap.Core.Features;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -23,6 +24,13 @@ builder.Services.AddSingleton<JsonBoardLoader>(serviceProvider =>
         serviceProvider.GetRequiredService<JsonFileLoader<BoardData>>(),
         serviceProvider.GetRequiredService<BoardFilePathResolver>()
     ));
+
+// Register feature system services
+builder.Services.AddSingleton<IFeatureRegistry, FeatureRegistry>();
+builder.Services.AddSingleton<FeatureFactory>();
+builder.Services.AddSingleton<TemplateResolver>();
+builder.Services.AddSingleton<LegacyMacroExpander>();
+builder.Services.AddSingleton<FeatureMapBuilder>();
 
 // Register legend services with proper dependency injection
 builder.Services.AddSingleton<FilePathResolver>();
