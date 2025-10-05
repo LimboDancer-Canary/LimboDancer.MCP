@@ -4,6 +4,10 @@
     <ProjectReference Include="..\AslHexMap.Core\AslHexMap.Core.csproj" />
   </ItemGroup>
 
+  <ItemGroup>
+    <Folder Include="Components\" />
+  </ItemGroup>
+
   <PropertyGroup>
     <TargetFramework>net9.0</TargetFramework>
     <Nullable>enable</Nullable>
