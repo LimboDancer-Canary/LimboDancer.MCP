@@ -197,7 +197,7 @@
         foreach (var b in _usage.Buildings)
         {
             if (b.Equals("wood", StringComparison.OrdinalIgnoreCase)) tokens.Add("building-wood");
-            else if (b.Equals("stone2", StringComparison.OrdinalIgnoreCase)) tokens.Add("building-stone2");
+            else if (b.Equals("stone", StringComparison.OrdinalIgnoreCase)) tokens.Add("building-stone");
         }
 
         var model = await Legend.LoadAsync();

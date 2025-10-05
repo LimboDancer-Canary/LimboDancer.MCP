@@ -46,8 +46,8 @@
         "levels": 1
       }
     },
-    "stone2": {
-      "id": "stone2",
+    "stone": {
+      "id": "stone",
       "baseTerrain": "open",
       "building": {
         "type": "stone",
@@ -137,12 +137,13 @@
       },
       {
         "hexId": "1E3",
-        "templateId": "stone2",
+        "templateId": "stone",
         "overrides": [
           {
             "type": "building-footprint",
             "material": "stone",
             "footprint": "span",
+            "levels": 2,
             "orientation": "W_E",
             "depth": 0.62,
             "groupId": "S2"
@@ -151,12 +152,13 @@
       },
       {
         "hexId": "1F3",
-        "templateId": "stone2",
+        "templateId": "stone",
         "overrides": [
           {
             "type": "building-footprint",
             "material": "stone",
             "footprint": "span",
+            "levels": 2,
             "orientation": "W_E",
             "depth": 0.62,
             "groupId": "S2"
@@ -169,7 +171,7 @@
       },
       {
         "hexId": "1G3",
-        "templateId": "stone2",
+        "templateId": "stone",
         "overrides": [
           {
             "type": "building-footprint",
@@ -268,7 +270,7 @@
       },
       {
         "hexId": "1E6",
-        "templateId": "stone2",
+        "templateId": "stone",
         "overrides": [
           {
             "type": "building-footprint",
@@ -282,12 +284,13 @@
       },
       {
         "hexId": "1F6",
-        "templateId": "stone2",
+        "templateId": "stone",
         "overrides": [
           {
             "type": "building-footprint",
             "material": "stone",
             "footprint": "span",
+            "levels": 2,
             "orientation": "NE_SW",
             "depth": 0.6,
             "groupId": "S2V"

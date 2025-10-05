@@ -5,7 +5,7 @@ using AslHexMap.Core.Schema;
 using System;
 using System.Collections.Generic;
 using System.Globalization;
-using System.Linq;            // <-- added
+using System.Linq;
 using System.Text;
 using System.Text.Json;
 
@@ -124,6 +124,8 @@ namespace AslHexMap.Core.Rendering
             LegendRenderer.LegendUsage? usage = null,
             bool useFeatureOverlays = true)
         {
+            usage ??= new LegendRenderer.LegendUsage(); // ensure not null
+
             var inv = CultureInfo.InvariantCulture;
 
             int cols = data.Map?.Dimensions?.Width ?? 0;
@@ -168,7 +170,7 @@ namespace AslHexMap.Core.Rendering
 
                     // Resolve base terrain (template + overrides)
                     string baseTerrain = Hexes.ResolveBaseTerrain(hex, defaultBase, templates);
-                    usage?.Bases.Add(TerrainStyle.NormalizeBase(baseTerrain));
+                    usage.Bases.Add(TerrainStyle.NormalizeBase(baseTerrain));
 
                     var (cx, cy) = HexLayout.OffsetOddQToPixelFlat(col, row, size);
                     (cx, cy) = shift(cx, cy);
@@ -189,25 +191,27 @@ namespace AslHexMap.Core.Rendering
                     var (cx, cy) = HexLayout.OffsetOddQToPixelFlat(col, row, size);
                     (cx, cy) = shift(cx, cy);
 
-                    // Overlays
                     if (useFeatureOverlays && featureMap.TryGetValue((col, row), out var feats) && feats is not null)
                     {
-                        string? groupId = feats.OfType<AslHexMap.Core.Features.BuildingFootprint>()
-                                               .FirstOrDefault()?.GroupId;
+                        // detect building + stairwell to coordinate one unified badge
+                        var building = feats.OfType<AslHexMap.Core.Features.BuildingFootprint>().FirstOrDefault();
+                        bool hasStairwell = feats.OfType<AslHexMap.Core.Features.Stairwell>().Any(s => s.Present);
+                        int? levelForBadge = building?.Levels;
 
                         var ctx = new AslHexMap.Core.Features.FeatureContext
                         {
                             Coord = (col, row),
-                            GroupId = groupId
+                            GroupId = building?.GroupId,
+                            UseCircularStairwellBadge = hasStairwell && levelForBadge.HasValue,
+                            StairwellBadgeLevel = levelForBadge
                         };
 
                         foreach (var f in feats)
                         {
-                            // Bridge to existing legend usage tokens for buildings
-                            if (f.Token.Equals("building-wood", StringComparison.OrdinalIgnoreCase))
-                                usage?.Buildings.Add("wood");
-                            else if (f.Token.Equals("building-stone2", StringComparison.OrdinalIgnoreCase))
-                                usage?.Buildings.Add("stone2");
+                            // legend usage
+                            var t = f.Token?.ToLowerInvariant() ?? "";
+                            if (t.Contains("building-wood")) usage?.Buildings.Add("wood");
+                            else if (t.Contains("building-stone")) usage?.Buildings.Add("stone");
 
                             f.Render(sb, cx, cy, size, ctx);
                         }
@@ -226,6 +230,7 @@ namespace AslHexMap.Core.Rendering
             Svg.End(sb);
             return sb.ToString();
         }
+
 
         public static string RenderLegendIcon(string token, double size = 14)
         {
@@ -272,7 +277,7 @@ namespace AslHexMap.Core.Rendering
                     Footprint = FootprintKind.Center
                 }.Render(sb, cx, cy, size, ctx);
             }
-            else if (token.Equals("building-stone2", StringComparison.OrdinalIgnoreCase))
+            else if (token.Equals("building-stone", StringComparison.OrdinalIgnoreCase))
             {
                 new BuildingFootprint
                 {
@@ -287,7 +292,7 @@ namespace AslHexMap.Core.Rendering
             else if (token.Equals("feature-rowhouse-edge", StringComparison.OrdinalIgnoreCase))
             {
                 // Show a single thick facade on the “east-ish” side to communicate the concept
-                new RowhouseEdge { Edges = new[] { Side.NE } }.Render(sb, cx, cy, size, ctx);  // <-- changed
+                new RowhouseEdge { Edges = new[] { Side.NE } }.Render(sb, cx, cy, size, ctx);
             }
 
             Svg.End(sb);
@@ -445,7 +450,7 @@ namespace AslHexMap.Core.Rendering
                 }
                 else if (t == "stone" && levels >= 2)
                 {
-                    usage?.Buildings.Add("stone2");
+                    usage?.Buildings.Add("stone");
                     AppendStoneBuilding2(sb, cx, cy, size);
                 }
             }

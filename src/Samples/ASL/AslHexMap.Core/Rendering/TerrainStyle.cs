@@ -26,7 +26,7 @@ namespace AslHexMap.Core.Rendering
             // Building “materials” supported by our defs.
             public static readonly HashSet<string> Building = new(StringComparer.OrdinalIgnoreCase)
             {
-                "stone1","stone2","wood"
+                "stone","stone1","stone2","wood"
             };
         }
 
