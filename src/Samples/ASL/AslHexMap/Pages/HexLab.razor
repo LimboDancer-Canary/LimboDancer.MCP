@@ -1,0 +1,481 @@
+﻿@page "/hexlab"
+@using System
+@using System.Linq
+@using AslHexMap.Core.Geometry
+@using AslHexMap.Core.Rendering
+
+<style>
+    .hexlab {
+        display: grid;
+        grid-template-columns: 300px 1fr;
+        gap: 16px;
+        padding: 16px;
+    }
+
+    .panel {
+        border: 1px solid #e5e7eb;
+        border-radius: 12px;
+        background: #fff;
+    }
+
+        .panel .panel-body {
+            padding: 12px;
+        }
+
+        .panel h3 {
+            margin: 0 0 10px;
+            font: 600 16px/1.25 system-ui, Segoe UI, Roboto, sans-serif;
+        }
+
+    .stack {
+        display: grid;
+        gap: 10px;
+    }
+
+    .sidebar {
+        display: grid;
+        gap: 10px;
+    }
+
+    .terrain-scroll {
+        max-height: 60vh;
+        overflow: auto;
+    }
+
+    .terrain-list {
+        list-style: none;
+        padding: 0;
+        margin: 0;
+        display: grid;
+        gap: 8px;
+    }
+
+    .terrain-btn {
+        width: 100%;
+        text-align: left;
+        padding: 8px 10px;
+        border-radius: 8px;
+        border: 1px solid #d1d5db;
+        background: #fff;
+        cursor: pointer;
+    }
+
+        .terrain-btn.active {
+            border-color: #2563eb;
+            box-shadow: 0 0 0 2px rgba(37,99,235,.15) inset;
+        }
+
+    .maingrid {
+        display: grid;
+        grid-template-rows: auto 360px auto;
+        gap: 12px;
+    }
+
+    .preview {
+        display: grid;
+        place-items: start center;
+        height: 360px;
+        overflow: auto;
+        padding: 8px;
+    }
+
+    .editor-grid {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 12px;
+    }
+
+        .editor-grid textarea {
+            width: 100%;
+            min-height: 220px;
+            resize: vertical;
+            font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+            font-size: 12px;
+            line-height: 1.3;
+            border: 1px solid #d1d5db;
+            border-radius: 8px;
+            padding: 8px;
+        }
+
+    .toolbar {
+        display: flex;
+        gap: 8px;
+        align-items: center;
+        flex-wrap: wrap;
+    }
+
+    .btn {
+        border: 1px solid #d1d5db;
+        background: #f9fafb;
+        border-radius: 8px;
+        padding: 6px 10px;
+        cursor: pointer;
+    }
+
+        .btn.primary {
+            border-color: #2563eb;
+            background: #2563eb;
+            color: #fff;
+        }
+
+        .btn.ghost {
+            background: transparent;
+        }
+
+    .small {
+        font-size: 12px;
+        color: #6b7280;
+    }
+
+    .error {
+        color: #b91c1c;
+        font-size: 12px;
+    }
+
+    .status {
+        margin-top: 6px;
+        font: 12px system-ui;
+        color: #555;
+    }
+</style>
+
+<div class="hexlab">
+    <!-- LEFT: terrain picker -->
+    <aside class="panel sidebar">
+        <div class="panel-body">
+            <h3>Terrain</h3>
+            <div class="terrain-scroll">
+                <ul class="terrain-list">
+                    @foreach (var t in _catalog)
+                    {
+                        <li>
+                            <button class="terrain-btn @(SelectedKey == t.Key ? "active" : "")"
+                                    @onclick="() => SelectTerrain(t.Key)">
+                                @t.Label
+                            </button>
+                        </li>
+                    }
+                </ul>
+            </div>
+        </div>
+    </aside>
+
+    <!-- RIGHT: preview + editor -->
+    <section class="panel">
+        <div class="panel-body maingrid">
+
+            <!-- Top toolbar: global apply -->
+            <div class="toolbar">
+                <strong>Hex Terrain Feature Laboratory</strong>
+                <button class="btn primary" title="Apply Defs and Overlay changes" @onclick="ApplyAll">Apply Changes</button>
+                <button class="btn ghost" title="Reset editors to empty" @onclick="ResetEditors">Reset Editors</button>
+                <span class="small">Edits are staged — preview updates only when you click <em>Apply Changes</em>.</span>
+            </div>
+
+            <!-- Preview -->
+            <div class="preview panel">
+                <div class="panel-body">
+                    <svg id="hexSvg" width="420" height="340" viewBox="0 0 420 340"
+                         role="img" aria-label="ASL Hex Preview">
+                        <!-- Shared defs + applied extra defs (always wrapped/validated) -->
+                        @((MarkupString)TerrainDefs.BuildTerrainDefs("v39"))
+                        @((MarkupString)DefsAppliedWrapped)
+
+                        <rect x="0" y="0" width="420" height="340" fill="white" />
+
+                        <!-- Hex -->
+                        <g transform="translate(210,170)">
+                            <polygon points="@HexPointsString"
+                                     fill="@FillValue"
+                                     stroke="#111" stroke-width="2"
+                                     shape-rendering="geometricPrecision" />
+                            <!-- Applied overlay lives inside the hex coord system -->
+                            @((MarkupString)OverlayAppliedSafe)
+                        </g>
+
+                        <!-- Terrain label (top center) -->
+                        <text x="210" y="20" text-anchor="middle" font-size="14" fill="#222"
+                              font-family="system-ui, Segoe UI, Roboto, sans-serif">
+                            @_catalog.First(c => c.Key == SelectedKey).Label
+                        </text>
+                    </svg>
+
+                    <!-- Status readout -->
+                    <div class="status">
+                        Selected: <b>@SelectedKey</b> · Pattern ID: <b>@ResolvedPatternId</b>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Editors -->
+            <div class="editor-grid">
+                <!-- Defs editor (draft) -->
+                <div class="stack">
+                    <div class="toolbar">
+                        <strong>&lt;defs&gt; editor (draft)</strong>
+                        <button class="btn" @onclick="() => InsertDefsTemplate(_defsTemplateMarkers)">Markers</button>
+                        <button class="btn" @onclick="() => InsertDefsTemplate(_defsTemplateHatch)">Hatch</button>
+                        <button class="btn" @onclick="() => InsertDefsTemplate(_defsTemplateOrchardOverride)">Orchard override</button>
+                        <button class="btn ghost" title="Apply only this editor" @onclick="ApplyDefs">Apply Defs</button>
+                        <span class="small">Only definition elements are allowed; content is appended after shared defs.</span>
+                    </div>
+                    <textarea @bind="DefsDraft" @bind:event="oninput" spellcheck="false"></textarea>
+                    @if (!string.IsNullOrWhiteSpace(DefsError))
+                    {
+                        <div class="error">@DefsError</div>
+                    }
+                </div>
+
+                <!-- Overlay editor (draft) -->
+                <div class="stack">
+                    <div class="toolbar">
+                        <strong>Overlay editor (draft)</strong>
+                        <button class="btn" @onclick="() => OverlayDraft = _overlayTemplateLevelBadge">Level badge</button>
+                        <button class="btn" @onclick="() => OverlayDraft = _overlayTemplateCenterDot">Center dot</button>
+                        <button class="btn" @onclick="() => OverlayDraft = _overlayTemplateRoad">Road</button>
+                        <button class="btn" @onclick="() => OverlayDraft = _overlayTemplateStairwell">Stairwell</button>
+                        <button class="btn ghost" title="Apply only this editor" @onclick="ApplyOverlay">Apply Overlay</button>
+                    </div>
+                    <textarea @bind="OverlayDraft" @bind:event="oninput" spellcheck="false"></textarea>
+                    @if (!string.IsNullOrWhiteSpace(OverlayError))
+                    {
+                        <div class="error">@OverlayError</div>
+                    }
+                </div>
+            </div>
+
+            <div class="small">
+                Overlay coordinates are hex-centered (origin at <code>0,0</code>, radius ≈ 120).
+                Place <code>&lt;pattern&gt;</code>, <code>&lt;marker&gt;</code>, etc. in the Defs editor;
+                drawables (<code>&lt;path&gt;</code>, <code>&lt;text&gt;</code>, …) in the Overlay editor.
+                Click <strong>Apply</strong> to re-render.
+            </div>
+        </div>
+    </section>
+</div>
+
+@code {
+    private sealed record TerrainItem(string Key, string Label);
+
+    // Explicitly typed array; only "orchard" is used (no aliasing)
+    private readonly TerrainItem[] _catalog = new TerrainItem[]
+    {
+    new TerrainItem("open","Open Ground"),
+    new TerrainItem("grain","Grain"),
+    new TerrainItem("woods","Woods"),
+    new TerrainItem("orchard","Orchard"),
+    new TerrainItem("brush","Brush"),
+    new TerrainItem("marsh","Marsh"),
+    new TerrainItem("sand","Sand"),
+    new TerrainItem("scrub","Scrub"),
+    new TerrainItem("stone1","Stone Building (light)"),
+    new TerrainItem("stone2","Stone Building (medium)"),
+    new TerrainItem("wood","Wood Building"),
+    };
+
+    private string SelectedKey = "open";
+    private string HexPointsString = "";
+    private string FillValue = "#d9d9d9";
+    private string ResolvedPatternId = ""; // status readout
+
+    // ---- Draft (edit) buffers ----
+    private string DefsDraft = "";
+    private string OverlayDraft = _overlayTemplateCenterDot;
+
+    // ---- Applied (rendered) buffers ----
+    private string DefsApplied = "";
+    private string OverlayApplied = _overlayTemplateCenterDot;
+
+    // ---- Safe HTML for rendering (simple script stripping) ----
+    private string DefsAppliedSafe => StripScripts(DefsApplied);
+    private string OverlayAppliedSafe => StripScripts(OverlayApplied);
+
+    // ---- Always wrap applied defs in <defs>…</defs> (and only allow definition tags) ----
+    private string DefsAppliedWrapped
+        => string.IsNullOrWhiteSpace(DefsAppliedSafe)
+           ? string.Empty
+           : (ContainsDefsTag(DefsAppliedSafe)
+                ? DefsAppliedSafe
+                : $"<defs>\n{DefsAppliedSafe}\n</defs>");
+
+    private static bool ContainsDefsTag(string s)
+      => s.IndexOf("<defs", StringComparison.OrdinalIgnoreCase) >= 0;
+
+    private string DefsError = "";
+    private string OverlayError = "";
+
+    protected override void OnInitialized() => UpdateScene();
+
+    private void SelectTerrain(string key)
+    {
+        SelectedKey = key;
+        UpdateScene();
+    }
+
+    private void UpdateScene()
+    {
+        var pts = HexGeom.PointsFlatTop(0, 0, 120);
+        HexPointsString = HexGeom.ToSvgPoints(pts);
+
+        // Base → building selection using your TerrainStyle
+        var pid = TerrainStyle.BaseTerrains.Contains(SelectedKey)
+            ? TerrainStyle.PatternIdForBase(SelectedKey)
+            : TerrainStyle.PatternIdForBuilding(SelectedKey) ?? TerrainStyle.PatternIdForBase("open");
+
+        // If a lab override exists (pid_lab pattern defined in applied defs), use it
+        var overrideId = GetLabOverrideIdIfPresent(pid);
+        if (!string.IsNullOrEmpty(overrideId))
+            pid = overrideId;
+
+        ResolvedPatternId = pid;                // status readout
+        FillValue = $"url(#{pid})";
+    }
+
+    private string GetLabOverrideIdIfPresent(string basePatternId)
+    {
+        if (string.IsNullOrWhiteSpace(DefsAppliedSafe)) return "";
+        var labId = basePatternId + "_lab";
+        return ContainsId(DefsAppliedSafe, labId) ? labId : "";
+    }
+
+    private static bool ContainsId(string svg, string id)
+    {
+        // Fast, case-insensitive check for id="X" inside the defs text
+        return svg?.IndexOf($"id=\"{id}\"", StringComparison.OrdinalIgnoreCase) >= 0;
+    }
+
+
+
+    // ---- Apply/reset actions ----
+    private void ApplyAll()
+    {
+        ApplyDefs(silent: true);
+        ApplyOverlay(silent: true);
+        StateHasChanged();
+    }
+
+    private void ApplyDefs() => ApplyDefs(silent: false);
+    private void ApplyDefs(bool silent)
+    {
+        DefsError = "";
+
+        if (!string.IsNullOrWhiteSpace(DefsDraft) && !LooksLikeOnlyDefinitionElements(DefsDraft))
+        {
+            DefsError = "The Defs editor only accepts definition elements such as <pattern>, <marker>, <filter>, " +
+                        "<linearGradient>, <radialGradient>, <clipPath>, <mask>, or <symbol>. " +
+                        "Move drawing elements (e.g., <rect>, <path>, <text>) to the Overlay editor.";
+            return; // do not apply invalid content
+        }
+
+        // OK to apply — will be wrapped in <defs> on render if needed
+        DefsApplied = DefsDraft;
+
+        if (!silent) StateHasChanged();
+    }
+
+    private void ApplyOverlay() => ApplyOverlay(silent: false);
+    private void ApplyOverlay(bool silent)
+    {
+        OverlayError = "";
+        OverlayApplied = OverlayDraft;
+        if (!silent) StateHasChanged();
+    }
+
+    private void ResetEditors()
+    {
+        DefsDraft = "";
+        OverlayDraft = "";
+    }
+
+    // helper for toolbar template buttons
+    private void InsertDefsTemplate(string t) => DefsDraft = t;
+
+    // ---- Validation helpers for Defs editor ----
+    private static readonly string[] _defsAllowedTags = new[]
+    {
+    "pattern","marker","filter","lineargradient","radialgradient","clippath","mask","symbol"
+  };
+
+// Accepts defs content if it contains at least one definition element.
+// We do NOT forbid shapes (rect, circle, path, etc.) because they are valid inside <pattern>, <marker>, etc.
+    private static bool LooksLikeOnlyDefinitionElements(string s)
+    {
+        if (string.IsNullOrWhiteSpace(s)) return false;
+        var t = s.ToLowerInvariant();
+
+        // any of these makes it valid defs content
+        string[] ok =
+        {
+            "<defs", "<pattern", "<marker", "<filter",
+            "<lineargradient", "<radialgradient", "<clippath",
+            "<mask", "<symbol"
+        };
+
+        foreach (var needle in ok)
+            if (t.Contains(needle)) return true;
+
+        return false;
+    }
+
+
+    // ---- Script stripping (basic) ----
+    private static string StripScripts(string s)
+    {
+        if (string.IsNullOrEmpty(s)) return string.Empty;
+        return s.Replace("<script", "&lt;script", StringComparison.OrdinalIgnoreCase)
+                .Replace("</script>", "&lt;/script&gt;", StringComparison.OrdinalIgnoreCase);
+    }
+
+    // ---- Templates ------------------------------------------------------------
+    private static readonly string _defsTemplateMarkers =
+  @"<marker id=""tri-end"" viewBox=""0 0 10 10"" refX=""9"" refY=""5"" markerWidth=""6"" markerHeight=""6"" orient=""auto"">
+  <path d=""M 0 0 L 10 5 L 0 10 z"" fill=""#444""/>
+</marker>";
+
+    private static readonly string _defsTemplateHatch =
+  @"<pattern id=""dense-hatch"" patternUnits=""userSpaceOnUse"" width=""6"" height=""6"">
+  <rect width=""6"" height=""6"" fill=""transparent""/>
+  <path d=""M0,6 L6,0"" stroke=""#222"" stroke-width=""0.6"" opacity=""0.25""/>
+</pattern>";
+
+    // One-click orchard override (uses the exact id TerrainStyle expects)
+    private static readonly string _defsTemplateOrchardOverride =
+        @"<pattern id=""orchardPattern_lab"" patternUnits=""userSpaceOnUse"" width=""24"" height=""24"">
+  <rect width=""24"" height=""24"" fill=""#cfe7b8""/>
+  <rect y=""0"" width=""24"" height=""12"" fill=""#bfe0a8"" opacity=""0.75""/>
+  <!-- row A -->
+  <g>
+    <circle cx=""6""  cy=""6""  r=""3.8"" fill=""#5fa247"" stroke=""#2f6631"" stroke-width=""0.8""/>
+    <rect   x=""5.6"" y=""6""  width=""0.9"" height=""3.4"" fill=""#3b4a2f""/>
+    <circle cx=""18"" cy=""6""  r=""3.8"" fill=""#5fa247"" stroke=""#2f6631"" stroke-width=""0.8""/>
+    <rect   x=""17.6"" y=""6"" width=""0.9"" height=""3.4"" fill=""#3b4a2f""/>
+  </g>
+  <!-- row B (staggered) -->
+  <g transform=""translate(0,12)"">
+    <circle cx=""0""  cy=""6"" r=""3.8"" fill=""#5fa247"" stroke=""#2f6631"" stroke-width=""0.8""/>
+    <rect   x=""-0.45"" y=""6"" width=""0.9"" height=""3.4"" fill=""#3b4a2f""/>
+    <circle cx=""12"" cy=""6"" r=""3.8"" fill=""#5fa247"" stroke=""#2f6631"" stroke-width=""0.8""/>
+    <rect   x=""11.55"" y=""6"" width=""0.9"" height=""3.4"" fill=""#3b4a2f""/>
+  </g>
+  <path d=""M0,12H24"" stroke=""#2f6631"" stroke-width=""0.7"" opacity=""0.25""/>
+</pattern>";
+
+
+    private static readonly string _overlayTemplateCenterDot =
+  @"<circle cx=""0"" cy=""0"" r=""3"" fill=""#222""/>";
+
+    private static readonly string _overlayTemplateLevelBadge =
+  @"<g transform=""translate(-95,-92)"">
+  <rect x=""0"" y=""0"" rx=""5"" ry=""5"" width=""28"" height=""20"" fill=""#fff"" stroke=""#111""/>
+  <text x=""14"" y=""14"" text-anchor=""middle"" font-size=""12"" font-family=""system-ui,Segoe UI"">2</text>
+</g>";
+
+    private static readonly string _overlayTemplateRoad =
+  @"<path d=""M -120,0 L 120,0"" stroke=""#444"" stroke-width=""6"" stroke-linecap=""round"" marker-end=""url(#tri-end)""/>";
+
+    private static readonly string _overlayTemplateStairwell =
+  @"<g transform=""translate(60,-70)"">
+  <rect x=""-10"" y=""-10"" width=""20"" height=""20"" fill=""#fff"" stroke=""#111""/>
+  <text x=""0"" y=""5"" text-anchor=""middle"" font-size=""14"" font-family=""system-ui,Segoe UI"">S</text>
+</g>";
+}

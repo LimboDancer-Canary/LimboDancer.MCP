@@ -1,0 +1,82 @@
+/* Layout */
+.hexlab {
+    display: grid;
+    grid-template-columns: 280px 1fr;
+    gap: 16px;
+    padding: 16px;
+    box-sizing: border-box;
+    height: 100vh; /* full-viewport height */
+    overflow: hidden; /* prevent page scrollbars; sidebar will scroll */
+}
+
+/* Sidebar */
+.sidebar {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+    border: 1px solid #e0e0e0;
+    border-radius: 12px;
+    padding: 12px;
+    background: #fafafa;
+}
+
+.sidebar-title {
+    margin: 4px 0 8px;
+    font: 600 14px/1.2 system-ui, Segoe UI, Roboto, sans-serif;
+    color: #222;
+}
+
+/* Scrollable container for the terrain list */
+.terrain-scroll {
+    flex: 1 1 auto; /* take remaining height */
+    min-height: 0; /* enable child to shrink for overflow calculations */
+    overflow-y: auto; /* vertical scrolling */
+    overflow-x: hidden;
+    scrollbar-gutter: stable; /* avoids horizontal reflow when scrollbar appears */
+    padding-right: 4px; /* small breathing room next to scrollbar */
+}
+
+/* List + items */
+.terrain-list {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: grid;
+    gap: 8px;
+}
+
+.terrain-item {
+    margin: 0;
+    padding: 0;
+}
+
+/* Buttons */
+.terrain-btn {
+    width: 100%;
+    text-align: left;
+    padding: 8px 10px;
+    border-radius: 10px;
+    border: 1px solid #e0e0e0;
+    background: #fff;
+    cursor: pointer;
+    font: 500 13px/1.2 system-ui, Segoe UI, Roboto, sans-serif;
+    color: #222;
+}
+
+    .terrain-btn:hover {
+        background: #f2f2f2;
+    }
+
+    .terrain-btn.active {
+        border-color: #1f6feb;
+        box-shadow: 0 0 0 2px rgba(31, 111, 235, 0.15) inset;
+    }
+
+/* Viewer panel */
+.viewer {
+    border: 1px solid #e0e0e0;
+    border-radius: 12px;
+    padding: 8px;
+    background: #fff;
+    overflow: auto; /* allow the SVG to scroll if it exceeds the viewport */
+}

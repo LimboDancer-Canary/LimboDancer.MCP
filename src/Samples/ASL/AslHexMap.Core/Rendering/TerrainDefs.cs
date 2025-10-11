@@ -43,6 +43,12 @@ public static class TerrainDefs
     <circle cx=""6"" cy=""6"" r=""1.4"" fill=""#6e7d5e"" opacity=""0.6""/>
     <circle cx=""13"" cy=""12"" r=""1.2"" fill=""#6e7d5e"" opacity=""0.5""/>
   </pattern>
+
+  <!-- alias: openPattern -->
+  <pattern id=""openPattern"" x=""0"" y=""0"" width=""24"" height=""24"" patternUnits=""userSpaceOnUse"">
+    <rect width=""24"" height=""24"" fill=""#90a955""/>
+  </pattern>
+
   <pattern id=""openGroundPattern"" x=""0"" y=""0"" width=""24"" height=""24"" patternUnits=""userSpaceOnUse"">
     <rect width=""24"" height=""24"" fill=""#90a955""/>
   </pattern>
